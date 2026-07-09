@@ -1,0 +1,45 @@
+# Stablecoin Whale Monitor ignore rules
+
+# Environment files and local secrets
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Google Cloud / service-account credentials
+*service-account*.json
+*credentials*.json
+*credential*.json
+*.pem
+*.p12
+*.key
+
+# Local assistant/editor state
+.claude/
+.codex/
+.agents/
+
+# Dependencies and package manager cache
+node_modules/
+frontend/node_modules/
+.pnpm-store/
+
+# Build output and generated TypeScript state
+frontend/.next/
+frontend/out/
+frontend/tsconfig.tsbuildinfo
+
+# Runtime data
+data/local-storage/
+data/indexer.lock
+tmp/
+
+# Superseded local design artifact; README documents the current MVP
+SWM_GCP_Design.pdf
+
+# Logs, coverage, and OS noise
+*.log
+coverage/
+.DS_Store

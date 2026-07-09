@@ -1,0 +1,8 @@
+{
+  "USDC": {
+    "decimals": 6
+  },
+  "USDT": {
+    "decimals": 6
+  }
+}

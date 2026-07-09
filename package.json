@@ -1,0 +1,21 @@
+{
+  "name": "stablecoin-whale-monitor",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "indexer": "node scripts/fetch-usdc-logs.mjs",
+    "indexer:once": "node scripts/fetch-usdc-logs.mjs --once",
+    "api": "node src/api/server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@google-cloud/storage": "^7.21.0",
+    "express": "^5.2.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "uuid": "^11.1.1"
+    }
+  }
+}

@@ -1,0 +1,30 @@
+[Unit]
+Description=Stablecoin Whale Monitor indexer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=swm-indexer
+Group=swm-indexer
+WorkingDirectory=/opt/swm
+EnvironmentFile=/etc/swm/indexer.env
+Environment=INDEXER_LOCK_FILE=/run/swm/indexer.lock
+ExecStart=/usr/bin/node /opt/swm/scripts/fetch-usdc-logs.mjs
+Restart=on-failure
+RestartSec=5
+RuntimeDirectory=swm
+RuntimeDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
