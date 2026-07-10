@@ -1,0 +1,14 @@
+.git
+.env
+*.env
+test
+SWM_GCP_Design.pdf
+.env.*
+node_modules
+frontend
+.pnpm-store
+tmp
+*.log
+.DS_Store
+data
+cmd

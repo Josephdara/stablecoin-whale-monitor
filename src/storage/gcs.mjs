@@ -77,13 +77,17 @@ export class GcsStorageAdapter {
         maxResults: 1_000,
         ...(pageToken ? { pageToken } : {}),
       });
-      for (const file of files) {
-        if (!file.name.endsWith(".json") || knownNames.has(file.name)) continue;
-        const [contents] = await file.download();
-        yield {
-          name: file.name,
-          event: JSON.parse(contents.toString("utf8")),
-        };
+      const wanted = files.filter(
+        (file) => file.name.endsWith(".json") && !knownNames.has(file.name),
+      );
+      for (let i = 0; i < wanted.length; i += 25) {
+        const batch = await Promise.all(
+          wanted.slice(i, i + 25).map(async (file) => {
+            const [contents] = await file.download();
+            return { name: file.name, event: JSON.parse(contents.toString("utf8")) };
+          }),
+        );
+        yield* batch;
       }
       pageToken = nextQuery?.pageToken;
     } while (pageToken);

@@ -43,3 +43,4 @@ SWM_GCP_Design.pdf
 *.log
 coverage/
 .DS_Store
+cmd

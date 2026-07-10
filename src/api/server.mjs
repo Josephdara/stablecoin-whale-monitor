@@ -6,7 +6,9 @@ loadDotEnv();
 const config = loadApiConfig();
 const storage = createStorage(config);
 const index = new EventIndex(storage, config.chainId);
-await index.refresh();
+index.refresh().catch((error) => {
+  console.error(JSON.stringify({ level: "error", message: "Initial event index refresh failed", error: error.message }));
+});
 
 let refreshTimer;
 let shuttingDown = false;
