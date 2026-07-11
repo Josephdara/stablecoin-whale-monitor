@@ -1,34 +1,67 @@
 # Stablecoin Whale Monitor
 
-Stablecoin Whale Monitor is a cloud-deployed blockchain indexing project that watches Ethereum mainnet for large USDC and USDT `Transfer` events, stores each qualifying transfer as an immutable JSON object, and serves the data through a small API and static dashboard.
+Stablecoin Whale Monitor is a cloud-deployed blockchain indexing project that watches Ethereum mainnet for large USDC and USDT `Transfer` events, stores each qualifying transfer as an immutable object in Cloud Storage, and serves the data through a small API and static dashboard. Live at [swm.josephdara.com](https://swm.josephdara.com).
 
-I built this as a cloud engineering portfolio project: not just “read from an API and show a table,” but a complete path from blockchain ingestion to storage, backend serving, frontend hosting, load balancing, security controls, and post-deployment debugging on Google Cloud.
+I built this as a cloud engineering portfolio project: not just "read from an API and show a table," but a complete path from blockchain ingestion to storage, backend serving, frontend hosting, load balancing, security controls, and post-deployment debugging on Google Cloud.
 
-The longer build write-up is here: [Building and Deploying a Blockchain Indexer on Google Cloud](https://josephdara.hashnode.dev/building-and-deploying-a-blockchain-indexer-on-google-cloud).
+The project exists in two versions, both documented here:
+
+- **v1** runs on hand-configured Compute Engine VMs with systemd, Nginx, and a global load balancer. Build write-up: [Building and Deploying a Blockchain Indexer on Google Cloud](https://josephdara.hashnode.dev/building-and-deploying-a-blockchain-indexer-on-google-cloud).
+- **v2** containerizes the same codebase and runs it on Cloud Run, Cloud Scheduler, Pub/Sub, and GKE Autopilot. Full write-up, every command, and the incident log: [PLAYBOOK.md](PLAYBOOK.md).
 
 ## What it does
 
 - Monitors Ethereum mainnet USDC and USDT transfers.
 - Filters for large transfers using a configurable minimum amount.
 - Uses checkpointing so the indexer can restart without replaying from scratch.
-- Stores events as individual JSON objects instead of rows in a database.
+- Stores events as immutable Cloud Storage objects instead of rows in a database (per-event JSON in v1, NDJSON batches per block range in v2).
 - Serves a read-only API for listing, filtering, health checks, and transaction lookup.
+- Emails an alert for any transfer of $1M or more (v2).
 - Displays the newest transfers first in a statically exported Next.js frontend.
-- Runs in production on Google Cloud with a private indexer VM and public load-balanced web tier.
+- Runs on Google Cloud: a private indexer VM and public load-balanced web tier in v1, containers on Cloud Run in v2.
+
+## v2: Containerized on Cloud Run, Pub/Sub, and GKE
+
+Version 2 moves the whole system from the hand-configured VM into a single container image that runs as three workloads, selected by arguments alone: the read-only API (Cloud Run Service), the indexer (Cloud Run Job, fired every minute by Cloud Scheduler), and a new email alerter that mails me any transfer of $1M or more (a private Cloud Run Service driven by Pub/Sub push).
+
+```text
+Scheduler (1 min) ──OAuth──▶ Cloud Run Job (indexer)
+                                │ writes NDJSON batch per block range
+                                ▼
+              gs://swm-event/ethereum/ranges/<from>-<to>.json
+                    │                          │ OBJECT_FINALIZE notification
+                    │ reads (30s poll)         ▼
+                    ▼                   topic: whale-events ──▶ push sub ──▶ swm-alerter ──▶ email
+          Cloud Run Service (API)                                  │ 5 failures
+          public HTTPS URL                                         ▼
+                                                              whale-dlq
+```
+
+Other changes worth knowing about:
+
+- **Storage format**: the indexer now writes one NDJSON object per processed block range instead of one JSON object per event:
+
+  ```text
+  ethereum/ranges/<from-block>-<to-block>.json
+  ```
+
+  Readers handle both formats, so the v1 objects needed no migration. This cut the API's cold-start reads from ~8,800 objects to a handful and gives Pub/Sub one clean message per batch.
+- **Event backbone**: Cloud Storage notifications publish every new batch to a Pub/Sub topic, with a dead-letter queue for poison messages. The alerter is just the first subscriber.
+- **GKE Autopilot**: the same image was also deployed to Kubernetes (Deployment, CronJob, Workload Identity, LoadBalancer) as a same-day exercise, then torn down. No code changed, which was the point.
 
 ## Why this design
 
-The MVP intentionally uses Cloud Storage as the canonical datastore instead of a SQL database. Each transfer event is written as its own deterministic object:
+The project intentionally uses Cloud Storage as the canonical datastore instead of a SQL database. In v1, each transfer event is written as its own deterministic object:
 
 ```text
 events/ethereum/YYYY/MM/DD/<block>-<logIndex>-<txHash>.json
 ```
 
-That keeps the storage layer simple and cheap for a portfolio-scale workload. The event files are immutable, easy to inspect, and safe to rebuild the API’s in-memory index from. Checkpoints and token metadata live in a separate state bucket so the indexer can track progress without mixing mutable state with immutable event data.
+That keeps the storage layer simple and cheap for a portfolio-scale workload. The event files are immutable, easy to inspect, and safe to rebuild the API's in-memory index from. Checkpoints and token metadata live in a separate state bucket so the indexer can track progress without mixing mutable state with immutable event data. v2 keeps every one of those properties and changes only the granularity: one NDJSON object per block range.
 
 The indexer only advances its checkpoint after the relevant event objects for a block range have been written or confirmed as already existing. Event writes use generation guards, so duplicate writes are treated as success while accidental overwrites are avoided.
 
-## Architecture
+## v1 architecture (Compute Engine)
 
 Production traffic flows through a global external Application Load Balancer:
 
@@ -45,7 +78,7 @@ Browser HTTPS
       /api proxied to Express on 127.0.0.1:3001
 ```
 
-The deployment uses:
+The v1 deployment uses:
 
 - Custom VPC.
 - Public web subnet.
@@ -63,9 +96,9 @@ The deployment uses:
 - Nginx as the VM-local reverse proxy.
 - Express on loopback only.
 
-The project was deployed in Google Cloud’s Toronto region using `northamerica-northeast2-b`.
+The project was deployed in Google Cloud's Toronto region using `northamerica-northeast2-b`.
 
-## Security model
+## v1 security model
 
 The public internet does not talk directly to the application processes.
 
@@ -85,28 +118,42 @@ The main firewall rules are:
 | Rule | Purpose |
 | --- | --- |
 | `swm-allow-lb-web` | Allows Google Front End/load balancer and health-check traffic to reach the web VM on TCP 80. |
-| `swm-allow-admin-ssh` | Allows SSH to the web VM only from the administrator’s public IPv4 `/32`. |
+| `swm-allow-admin-ssh` | Allows SSH to the web VM only from the administrator's public IPv4 `/32`. |
 | `swm-allow-web-to-indexer-ssh` | Allows the web VM to act as a jump host to the private indexer VM over TCP 22. |
 
 I intentionally did not create broad public VM access for HTTP, HTTPS, the indexer, or Express port `3001`.
 
+v2 carries the same least-privilege model onto managed platforms: per-workload service accounts (indexer writes, API reads, alerter reads one bucket and one secret), the RPC URL and Gmail app password in Secret Manager, the alerter reachable only by Pub/Sub through an Oauth-authenticated push subscription, and Workload Identity instead of key files on GKE.
+
 ## Tech stack
+
+Application:
 
 - Node.js 20+
 - Express
 - Next.js static export
 - Google Blockchain JSON-RPC
-- Google Cloud Storage
-- Google Compute Engine
-- Google Cloud Load Balancing
-- Cloud NAT
-- Cloud Armor
-- Cloud CDN
-- Certificate Manager
-- Nginx
-- systemd
+- nodemailer (v2 alerter)
 - pnpm
-- Node’s built-in test runner
+- Node's built-in test runner
+
+Google Cloud, v1:
+
+- Compute Engine
+- Cloud Load Balancing, Cloud CDN, Cloud Armor, Certificate Manager
+- Cloud NAT
+- Cloud Storage
+- Nginx and systemd on the VMs
+
+Google Cloud, v2:
+
+- Docker (multi-arch build for amd64)
+- Artifact Registry
+- Cloud Run (Services and Jobs)
+- Cloud Scheduler
+- Pub/Sub (storage notifications, push subscription, dead-letter queue)
+- Secret Manager
+- GKE Autopilot (Workload Identity, ConfigMap/Secret, CronJob, LoadBalancer)
 
 ## Repository layout
 
@@ -114,8 +161,9 @@ I intentionally did not create broad public VM access for HTTP, HTTPS, the index
 .
 ├── src/
 │   ├── api/             # Express API and in-memory event index
+│   ├── alerter/         # v2 email alerter (Pub/Sub push consumer)
 │   ├── indexer/         # Checkpointed blockchain indexing logic
-│   ├── storage/         # Local filesystem and GCS storage adapters
+│   ├── storage/         # Local filesystem and GCS storage adapters, NDJSON helpers
 │   ├── config.mjs       # Environment parsing and validation
 │   ├── event.mjs        # Event formatting/parsing helpers
 │   └── rpc.mjs          # JSON-RPC client helpers
@@ -123,9 +171,14 @@ I intentionally did not create broad public VM access for HTTP, HTTPS, the index
 │   └── fetch-usdc-logs.mjs
 ├── frontend/            # Next.js dashboard
 ├── deploy/
-│   ├── nginx/           # Nginx reverse proxy config
-│   └── systemd/         # API and indexer service units
+│   ├── nginx/           # v1: Nginx reverse proxy config
+│   ├── systemd/         # v1: API and indexer service units
+│   ├── indexer-env.yaml       # v2: Cloud Run job env (--env-vars-file)
+│   ├── api-deployment.yaml    # v2: GKE Deployment + LoadBalancer Service
+│   └── indexer-cronjob.yaml   # v2: GKE CronJob
 ├── test/                # Node test suite
+├── Dockerfile           # v2: one image, three workloads
+├── PLAYBOOK.md          # v2: full deployment record and incident log
 └── data/sample-preview/ # Small non-secret sample fixture
 ```
 
@@ -180,9 +233,11 @@ pnpm install
 pnpm dev
 ```
 
-The frontend should call the API through `NEXT_PUBLIC_API_BASE_URL` during local development. In production, I leave that value unset so browser requests use the same origin and Nginx proxies `/api` to Express.
+The frontend should call the API through `NEXT_PUBLIC_API_BASE_URL` during local development. In v1 production, I leave that value unset so browser requests use the same origin and Nginx proxies `/api` to Express.
 
 ## Production configuration
+
+### v1 (VMs)
 
 On the production VMs, the app uses Cloud Storage:
 
@@ -192,7 +247,7 @@ GCS_EVENTS_BUCKET=your-events-bucket
 GCS_STATE_BUCKET=your-state-bucket
 ```
 
-The current production-oriented indexer settings are:
+The v1 indexer settings are:
 
 ```dotenv
 BLOCK_BATCH_SIZE=5
@@ -201,9 +256,9 @@ POLL_INTERVAL_MS=15000
 CONFIRMATION_BUFFER=6
 ```
 
-`BLOCK_BATCH_SIZE` is the logical range committed by one checkpoint. `RPC_LOG_CHUNK_SIZE` is the size of each `eth_getLogs` request. Google Blockchain RPC currently requires small log ranges, so both values are set to `5`.
+`BLOCK_BATCH_SIZE` is the logical range committed by one checkpoint. `RPC_LOG_CHUNK_SIZE` is the size of each `eth_getLogs` request. Google Blockchain RPC caps log queries at 5 blocks, so that value is a provider limit, not a tuning choice.
 
-The API binds to loopback:
+The v1 API binds to loopback:
 
 ```dotenv
 API_HOST=127.0.0.1
@@ -213,6 +268,10 @@ API_MAX_PAGE_SIZE=50
 ```
 
 Nginx listens on VM port `80`, serves `frontend/out`, and proxies `/api` to `127.0.0.1:3001`.
+
+### v2 (Cloud Run / GKE)
+
+The container receives its configuration from the platform instead of files on a VM: [`deploy/indexer-env.yaml`](deploy/indexer-env.yaml) via `--env-vars-file` on Cloud Run (with `BLOCK_BATCH_SIZE=100` since the checkpoint write is the expensive part, and `RPC_LOG_CHUNK_SIZE=5` unchanged because that limit belongs to the provider), secrets via Secret Manager, and a ConfigMap/Secret pair on GKE. The API binds `0.0.0.0:8080` behind Cloud Run's ingress instead of loopback behind Nginx. All commands are in [PLAYBOOK.md](PLAYBOOK.md).
 
 ## API
 
@@ -248,7 +307,7 @@ Returns API/index health, checkpoint information, indexed event count, and refre
 
 Returns daily aggregate stats. This endpoint exists in the backend, although the frontend no longer displays a statistics section.
 
-## Deployment notes
+## Deployment notes (v1)
 
 These are the main deployment actions used for the MVP, intentionally summarized instead of turned into a giant copy/paste script:
 
@@ -283,9 +342,13 @@ sudo systemctl enable --now nginx
 
 The service definitions in `deploy/systemd` harden the runtime with settings such as `NoNewPrivileges=true`, `PrivateTmp=true`, `ProtectSystem=strict`, `ProtectHome=true`, and restricted address families.
 
+For v2 deployment (Docker build, Artifact Registry, Cloud Run, Scheduler, Pub/Sub, GKE), see [PLAYBOOK.md](PLAYBOOK.md).
+
 ## Post-deployment debugging
 
-After deployment, the frontend and backend worked, but the site periodically returned:
+Both versions earned a debugging story.
+
+**v1:** after deployment, the frontend and backend worked, but the site periodically returned:
 
 ```text
 Data could not be loaded.
@@ -298,7 +361,7 @@ The load balancer was reporting backend trouble because the API process was cras
 JavaScript heap out of memory
 ```
 
-The root cause was the API’s event refresh path. It was repeatedly listing and downloading all Cloud Storage event objects into memory. Since refreshes could overlap and the object count had grown, memory usage climbed until Node crashed.
+The root cause was the API's event refresh path. It was repeatedly listing and downloading all Cloud Storage event objects into memory. Since refreshes could overlap and the object count had grown, memory usage climbed until Node crashed.
 
 The fix was to make event loading incremental:
 
@@ -308,7 +371,9 @@ The fix was to make event loading incremental:
 - Coalesce concurrent refresh calls.
 - Replace `setInterval` refresh scheduling with serialized `setTimeout` scheduling so the next refresh starts only after the previous one finishes.
 
-That turned the API refresh from “reload everything forever” into “load only new immutable event files.”
+That turned the API refresh from "reload everything forever" into "load only new immutable event files."
+
+**v2:** the same event-object growth resurfaced in a new costume: the container passed local smoke tests but failed Cloud Run's 4-minute startup probe, because the API blocked its port on sequentially downloading 8,830 objects. The fix chain (listen first, parallel downloads, and ultimately the NDJSON batch format) plus sixteen other incidents are catalogued in [PLAYBOOK.md](PLAYBOOK.md).
 
 ## Verification
 
@@ -326,16 +391,17 @@ pnpm typecheck
 pnpm build
 ```
 
-The tests cover event decoding, transfer classification, deterministic object naming, checkpoint safety, crash replay behavior, GCS duplicate-object handling, filtering, pagination, and API behavior.
+The tests cover event decoding, transfer classification, deterministic object naming, checkpoint safety, crash replay behavior, GCS duplicate-object handling, NDJSON batch reads and writes, alert filtering and formatting, filtering, pagination, and API behavior.
 
 For production verification, I used:
 
-- `/api/health` through the load balancer.
-- Local VM checks against `127.0.0.1:3001`.
-- Nginx proxy checks.
+- `/api/health` through the load balancer (v1) and the Cloud Run URL (v2).
+- Local VM checks against `127.0.0.1:3001` (v1).
+- Nginx proxy checks (v1).
 - Load balancer backend health checks.
-- systemd journal logs.
+- systemd journal logs (v1) and Cloud Run logs (v2).
 - Memory and restart monitoring after the API refresh fix.
+- Pub/Sub pull spot-checks and a deliberate dead-letter drill (v2).
 
 ## Finality note
 

@@ -1,5 +1,6 @@
 import { Storage } from "@google-cloud/storage";
 import { randomUUID } from "node:crypto";
+import { parseNdjson, serializeNdjson } from "./ndjson.mjs";
 
 export class GcsStorageAdapter {
   constructor(config, storage = new Storage()) {
@@ -7,10 +8,10 @@ export class GcsStorageAdapter {
     this.stateBucket = storage.bucket(config.gcsStateBucket);
   }
 
-  async createEvent(name, event) {
+  async createEventBatch(name, events) {
     try {
-      await this.eventsBucket.file(name).save(`${JSON.stringify(event)}\n`, {
-        contentType: "application/json",
+      await this.eventsBucket.file(name).save(serializeNdjson(events), {
+        contentType: "application/x-ndjson",
         resumable: false,
         preconditionOpts: { ifGenerationMatch: 0 },
       });
@@ -84,10 +85,12 @@ export class GcsStorageAdapter {
         const batch = await Promise.all(
           wanted.slice(i, i + 25).map(async (file) => {
             const [contents] = await file.download();
-            return { name: file.name, event: JSON.parse(contents.toString("utf8")) };
+            return { name: file.name, events: parseNdjson(contents.toString("utf8")) };
           }),
         );
-        yield* batch;
+        for (const { name, events } of batch) {
+          for (const event of events) yield { name, event };
+        }
       }
       pageToken = nextQuery?.pageToken;
     } while (pageToken);

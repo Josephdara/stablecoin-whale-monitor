@@ -49,13 +49,12 @@ export function buildEvent(transfer, block, config, detectedAt = new Date().toIS
   };
 }
 
-export function eventObjectName(event) {
-  const date = new Date(event.blockTimestamp);
-  if (Number.isNaN(date.getTime())) throw new Error("Invalid event blockTimestamp");
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  return `ethereum/${year}/${month}/${day}/${event.blockNumber}-${event.logIndex}-${event.transactionHash}.json`;
+export function rangeObjectName(fromBlock, toBlock) {
+  if (!Number.isSafeInteger(fromBlock) || !Number.isSafeInteger(toBlock) || fromBlock > toBlock) {
+    throw new Error(`Invalid block range: ${fromBlock}-${toBlock}`);
+  }
+  const pad = (block) => String(block).padStart(12, "0");
+  return `ethereum/ranges/${pad(fromBlock)}-${pad(toBlock)}.json`;
 }
 
 export function eventKey(event) {

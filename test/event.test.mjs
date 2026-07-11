@@ -5,7 +5,7 @@ import {
   classifyTransfer,
   decodeTransferLog,
   eventKey,
-  eventObjectName,
+  rangeObjectName,
 } from "../src/event.mjs";
 import {
   ADDRESS_A,
@@ -40,10 +40,8 @@ test("decodes USDC and serializes the complete event contract", () => {
     detectedAt: "2026-06-30T18:47:02.000Z",
   });
   assert.equal(eventKey(event), `1:${event.transactionHash}:42`);
-  assert.equal(
-    eventObjectName(event),
-    `ethereum/2026/06/30/100-42-${event.transactionHash}.json`,
-  );
+  assert.equal(rangeObjectName(100, 199), "ethereum/ranges/000000000100-000000000199.json");
+  assert.throws(() => rangeObjectName(200, 100), /Invalid block range/);
 });
 
 test("decodes USDT and classifies mint, burn, and normal transfers", () => {

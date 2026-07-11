@@ -17,4 +17,4 @@ STORAGE_BACKEND: "gcs"
 BLOCK_BATCH_SIZE: "100"
 RPC_LOG_CHUNK_SIZE: "5"
 INDEXER_LOCK_FILE: "/tmp/indexer.lock"
-START_BLOCK: "25498944"
+START_BLOCK: "25506578" #Update this to the latest block you want to index

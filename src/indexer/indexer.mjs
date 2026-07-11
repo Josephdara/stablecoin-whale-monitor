@@ -1,4 +1,4 @@
-import { buildEvent, decodeTransferLog, eventObjectName, parseAmount } from "../event.mjs";
+import { buildEvent, decodeTransferLog, parseAmount, rangeObjectName } from "../event.mjs";
 
 export async function runIndexer({ config, rpc, storage, once = false, hooks = {} }) {
   await rpc.assertChainId();
@@ -75,6 +75,7 @@ export async function processRange({ config, rpc, storage, fromBlock, toBlock })
   );
   const blocks = new Map();
   const detectedAt = new Date().toISOString();
+  const events = [];
   let qualifyingEvents = 0;
   let eventsCreated = 0;
   let duplicateEvents = 0;
@@ -99,11 +100,14 @@ export async function processRange({ config, rpc, storage, fromBlock, toBlock })
       if (block.hash !== transfer.blockHash) {
         throw new Error(`Log block hash mismatch at block ${transfer.blockNumber}`);
       }
-      const event = buildEvent(transfer, block, config, detectedAt);
-      const result = await storage.createEvent(eventObjectName(event), event);
-      if (result.created) eventsCreated += 1;
-      else duplicateEvents += 1;
+      events.push(buildEvent(transfer, block, config, detectedAt));
     }
+  }
+
+  if (events.length) {
+    const result = await storage.createEventBatch(rangeObjectName(fromBlock, toBlock), events);
+    if (result.created) eventsCreated = events.length;
+    else duplicateEvents = events.length;
   }
 
   if (!blocks.has(toBlock)) blocks.set(toBlock, await rpc.getBlockWithRetry(toBlock));

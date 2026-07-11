@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { GcsStorageAdapter } from "../src/storage/gcs.mjs";
 
-test("GCS event 412 is treated as an idempotent duplicate", async () => {
+test("GCS batch 412 is treated as an idempotent duplicate", async () => {
+  const saved = [];
   const file = {
-    save: async (_contents, options) => {
+    save: async (contents, options) => {
       assert.equal(options.preconditionOpts.ifGenerationMatch, 0);
+      saved.push(contents);
       const error = new Error("precondition failed");
       error.code = 412;
       throw error;
@@ -17,7 +19,11 @@ test("GCS event 412 is treated as an idempotent duplicate", async () => {
     { gcsEventsBucket: "events", gcsStateBucket: "state" },
     storageClient,
   );
-  assert.deepEqual(await adapter.createEvent("ethereum/event.json", { ok: true }), { created: false });
+  assert.deepEqual(
+    await adapter.createEventBatch("ethereum/ranges/000000000100-000000000199.json", [{ id: 1 }, { id: 2 }]),
+    { created: false },
+  );
+  assert.deepEqual(saved, ['{"id":1}\n{"id":2}\n']);
 });
 
 test("GCS checkpoint reads are pinned and replacements return their own generation", async () => {
@@ -52,22 +58,24 @@ test("GCS checkpoint reads are pinned and replacements return their own generati
   assert.deepEqual(written, { generation: "8" });
 });
 
-test("GCS event iteration is paginated and skips known object names", async () => {
+test("GCS event iteration is paginated, skips known names, and reads both single-event and NDJSON batch objects", async () => {
   const downloaded = [];
-  const file = (name, event) => ({
+  const file = (name, contents) => ({
     name,
     download: async () => {
       downloaded.push(name);
-      return [Buffer.from(JSON.stringify(event))];
+      return [Buffer.from(contents)];
     },
   });
   const pages = new Map([
     [undefined, [[
-      file("ethereum/known.json", { id: "known" }),
-      file("ethereum/one.json", { id: "one" }),
-      file("ethereum/ignored.txt", { id: "ignored" }),
+      file("ethereum/known.json", '{"id":"known"}\n'),
+      file("ethereum/2026/06/30/legacy.json", '{"id":"one"}\n'),
+      file("ethereum/ignored.txt", "ignored"),
     ], { pageToken: "next" }]],
-    ["next", [[file("ethereum/two.json", { id: "two" })], null]],
+    ["next", [[
+      file("ethereum/ranges/000000000100-000000000199.json", '{"id":"two"}\n{"id":"three"}\n'),
+    ], null]],
   ]);
   const eventsBucket = {
     getFiles: async (query) => {
@@ -90,8 +98,12 @@ test("GCS event iteration is paginated and skips known object names", async () =
   })) entries.push(entry);
 
   assert.deepEqual(entries, [
-    { name: "ethereum/one.json", event: { id: "one" } },
-    { name: "ethereum/two.json", event: { id: "two" } },
+    { name: "ethereum/2026/06/30/legacy.json", event: { id: "one" } },
+    { name: "ethereum/ranges/000000000100-000000000199.json", event: { id: "two" } },
+    { name: "ethereum/ranges/000000000100-000000000199.json", event: { id: "three" } },
   ]);
-  assert.deepEqual(downloaded, ["ethereum/one.json", "ethereum/two.json"]);
+  assert.deepEqual(downloaded, [
+    "ethereum/2026/06/30/legacy.json",
+    "ethereum/ranges/000000000100-000000000199.json",
+  ]);
 });

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { parseNdjson, serializeNdjson } from "./ndjson.mjs";
 
 export class LocalStorageAdapter {
   constructor(config) {
@@ -9,13 +10,13 @@ export class LocalStorageAdapter {
     this.stateRoot = join(this.root, "state");
   }
 
-  async createEvent(name, event) {
+  async createEventBatch(name, events) {
     const path = join(this.eventsRoot, name);
     await mkdir(dirname(path), { recursive: true });
     let handle;
     try {
       handle = await open(path, "wx", 0o600);
-      await handle.writeFile(`${JSON.stringify(event)}\n`, "utf8");
+      await handle.writeFile(serializeNdjson(events), "utf8");
       return { created: true };
     } catch (error) {
       if (error?.code === "EEXIST") return { created: false };
@@ -63,7 +64,7 @@ export class LocalStorageAdapter {
     const root = join(this.eventsRoot, "ethereum");
     const paths = await walkJson(root);
     const events = [];
-    for (const path of paths) events.push(JSON.parse(await readFile(path, "utf8")));
+    for (const path of paths) events.push(...parseNdjson(await readFile(path, "utf8")));
     return events;
   }
 }

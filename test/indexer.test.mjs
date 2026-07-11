@@ -13,7 +13,9 @@ test("threshold is inclusive and applies to USDC and USDT", async () => {
   const storage = new MemoryStorage();
   const result = await processRange({ config, rpc: new FakeRpc({ logs }), storage, fromBlock: 100, toBlock: 100 });
   assert.equal(result.qualifyingEvents, 2);
-  assert.equal(storage.events.size, 2);
+  assert.equal(result.eventsCreated, 2);
+  assert.deepEqual([...storage.events.keys()], ["ethereum/ranges/000000000100-000000000100.json"]);
+  assert.equal(storage.events.get("ethereum/ranges/000000000100-000000000100.json").length, 2);
 });
 
 test("confirmation buffer and 2,000-block boundaries advance an empty checkpoint", async () => {

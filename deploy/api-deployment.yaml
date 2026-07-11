@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: swm-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: swm-api }
+  template:
+    metadata:
+      labels: { app: swm-api }
+    spec:
+      serviceAccountName: swm-api
+      containers:
+        - name: api
+          image: northamerica-northeast2-docker.pkg.dev/stablecoinwhalemonitor/swm/swm:local
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef: { name: swm-config }
+          env:
+            - { name: API_HOST, value: "0.0.0.0" }
+            - { name: API_PORT, value: "8080" }
+            - { name: API_REFRESH_MS, value: "30000" }
+            - { name: API_MAX_PAGE_SIZE, value: "50" }
+          resources:
+            requests: { memory: 256Mi, cpu: 250m }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: swm-api
+spec:
+  type: LoadBalancer
+  selector: { app: swm-api }
+  ports:
+    - port: 80
+      targetPort: 8080

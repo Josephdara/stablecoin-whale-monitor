@@ -62,10 +62,10 @@ export class MemoryStorage {
     this.failEventWrites = false;
   }
 
-  async createEvent(name, event) {
+  async createEventBatch(name, events) {
     if (this.failEventWrites) throw new Error("storage unavailable");
     if (this.events.has(name)) return { created: false };
-    this.events.set(name, event);
+    this.events.set(name, [...events]);
     return { created: true };
   }
 
@@ -84,7 +84,7 @@ export class MemoryStorage {
   }
 
   async writeTokenMetadata() {}
-  async listEvents() { return [...this.events.values()]; }
+  async listEvents() { return [...this.events.values()].flat(); }
 }
 
 export class FakeRpc {

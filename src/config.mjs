@@ -79,6 +79,18 @@ export function loadApiConfig(env = process.env) {
   };
 }
 
+export function loadAlerterConfig(env = process.env) {
+  return {
+    gcsEventsBucket: required(env, "GCS_EVENTS_BUCKET"),
+    port: integer(env, "API_PORT", { min: 1, max: 65_535 }),
+    host: env.API_HOST?.trim() || "127.0.0.1",
+    alertMinimumAmount: decimal(env, "ALERT_MIN_AMOUNT"),
+    emailTo: required(env, "ALERT_EMAIL_TO"),
+    emailFrom: required(env, "ALERT_EMAIL_FROM"),
+    gmailAppPassword: required(env, "GMAIL_APP_PASSWORD"),
+  };
+}
+
 function loadStorageConfig(env) {
   const backend = required(env, "STORAGE_BACKEND").toLowerCase();
   if (!new Set(["local", "gcs"]).has(backend)) {
