@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Transfer = {
   chain: "ethereum";
@@ -41,12 +41,14 @@ type HealthResponse = {
   lastProcessedBlock: number | null;
   checkpointUpdatedAt: string | null;
   checkpointAgeSeconds: number | null;
+  retentionDays: number;
   indexedEvents: number;
   indexRefreshedAt: string | null;
   indexError: string | null;
 };
 
 type HealthLevel = "healthy" | "delayed" | "stale" | "unavailable";
+type TransferLoadResult = "loaded" | "reset" | "ignored" | "failed";
 
 type Filters = { token: "" | "USDC" | "USDT"; minimumAmount: string; address: string };
 
@@ -59,6 +61,33 @@ const AMOUNT_PATTERN = /^[0-9]+(?:\.[0-9]{1,6})?$/;
 
 function apiUrl(path: string) {
   return new URL(`${API_BASE_URL}${path}`, window.location.origin);
+}
+
+class ApiRequestError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
+async function fetchTransfersPage(cursor: string, filters: Filters): Promise<TransfersResponse> {
+  const url = apiUrl("/api/transfers");
+  url.searchParams.set("limit", String(PAGE_SIZE));
+  if (cursor) url.searchParams.set("cursor", cursor);
+  if (filters.token) url.searchParams.set("token", filters.token);
+  if (filters.minimumAmount) url.searchParams.set("minimumAmount", filters.minimumAmount);
+  if (filters.address) url.searchParams.set("address", filters.address);
+
+  const response = await fetch(url, { cache: "no-store" });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new ApiRequestError(
+      response.status,
+      getApiError(payload) ?? `Could not load transfer data (${response.status})`,
+    );
+  }
+  if (!isTransfersResponse(payload)) throw new Error("API returned an invalid transfer response");
+  return payload;
 }
 
 export default function Home() {
@@ -82,38 +111,40 @@ export default function Home() {
   const [txDetail, setTxDetail] = useState<TransactionResponse | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
   const [txLoading, setTxLoading] = useState(false);
+  const transferRequestId = useRef(0);
 
   const loadTransfers = useCallback(
-    async (cursor = "", resetHistory = false) => {
+    async (cursor = "", resetHistory = false): Promise<TransferLoadResult> => {
+      const requestId = transferRequestId.current + 1;
+      transferRequestId.current = requestId;
       setLoading(true);
       setError(null);
 
       try {
-        const url = apiUrl("/api/transfers");
-        url.searchParams.set("limit", String(PAGE_SIZE));
-        if (cursor) url.searchParams.set("cursor", cursor);
-        if (applied.token) url.searchParams.set("token", applied.token);
-        if (applied.minimumAmount) url.searchParams.set("minimumAmount", applied.minimumAmount);
-        if (applied.address) url.searchParams.set("address", applied.address);
-
-        const response = await fetch(url, { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error(`Could not load transfer data (${response.status})`);
+        let payload: TransfersResponse;
+        let recoveredExpiredCursor = false;
+        try {
+          payload = await fetchTransfersPage(cursor, applied);
+        } catch (reason) {
+          if (requestId !== transferRequestId.current) return "ignored";
+          if (!(cursor && reason instanceof ApiRequestError && reason.status === 400)) throw reason;
+          payload = await fetchTransfersPage("", applied);
+          recoveredExpiredCursor = true;
         }
 
-        const payload: unknown = await response.json();
-        if (!isTransfersResponse(payload)) throw new Error("API returned an invalid transfer response");
+        if (requestId !== transferRequestId.current) return "ignored";
         setTransfers(payload.items);
         setTotal(payload.total);
         setCounts(payload.counts);
         setNextCursor(payload.nextCursor);
-        if (resetHistory) setCursorHistory([""]);
-        return true;
+        if (resetHistory || recoveredExpiredCursor) setCursorHistory([""]);
+        return recoveredExpiredCursor ? "reset" : "loaded";
       } catch (reason) {
+        if (requestId !== transferRequestId.current) return "ignored";
         setError(reason instanceof Error ? reason.message : "Unable to load data");
-        return false;
+        return "failed";
       } finally {
-        setLoading(false);
+        if (requestId === transferRequestId.current) setLoading(false);
       }
     },
     [applied],
@@ -150,18 +181,34 @@ export default function Home() {
 
   const currentPage = cursorHistory.length;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageOffset = (currentPage - 1) * PAGE_SIZE;
+  const pageStart = Math.min(pageOffset + 1, total);
+  const pageEnd = Math.min(pageOffset + transfers.length, total);
+  const paginationIsConsistent = currentPage <= pageCount && pageStart <= pageEnd;
   const healthLevel = classifyHealth(health, healthOk);
+  const hasActiveFilters = Boolean(applied.token || applied.minimumAmount || applied.address);
+  const retentionWindow = health
+    ? `the last ${health.retentionDays} ${health.retentionDays === 1 ? "day" : "days"}`
+    : "the current retention window";
+
+  useEffect(() => {
+    if (!loading && !error && currentPage > pageCount) void loadTransfers("", true);
+  }, [currentPage, error, loadTransfers, loading, pageCount]);
 
   async function goNext() {
     const cursor = nextCursor;
     if (!cursor) return;
-    if (await loadTransfers(cursor)) setCursorHistory((history) => [...history, cursor]);
+    if (await loadTransfers(cursor) === "loaded") {
+      setCursorHistory((history) => [...history, cursor]);
+    }
   }
 
   async function goPrevious() {
     if (cursorHistory.length <= 1) return;
     const previousCursor = cursorHistory.at(-2) ?? "";
-    if (await loadTransfers(previousCursor)) setCursorHistory((history) => history.slice(0, -1));
+    if (await loadTransfers(previousCursor) === "loaded") {
+      setCursorHistory((history) => history.slice(0, -1));
+    }
   }
 
   function applyFilters(event: React.FormEvent) {
@@ -244,7 +291,9 @@ export default function Home() {
         <HealthField label="Checkpoint age" value={
           health?.checkpointAgeSeconds != null ? formatDuration(health.checkpointAgeSeconds) : "—"
         } />
-        <HealthField label="Indexed events" value={
+        <HealthField label={
+          health ? `Events in ${health.retentionDays}-day window` : "Events in retention window"
+        } value={
           health?.indexedEvents != null ? health.indexedEvents.toLocaleString() : "—"
         } />
         <HealthField label="Index refresh" value={
@@ -360,18 +409,25 @@ export default function Home() {
           </div>
         ) : transfers.length === 0 && !loading ? (
           <div className="state">
-            <strong>No transfers match.</strong>
-            <span>Adjust the filters, or run the indexer and reload.</span>
+            <strong>
+              {hasActiveFilters
+                ? "No transfers match these filters."
+                : `No qualifying transfers in ${retentionWindow}.`}
+            </strong>
+            <span>
+              {hasActiveFilters
+                ? "Adjust or reset the filters to broaden the results."
+                : "New qualifying transfers will appear automatically."}
+            </span>
           </div>
         ) : (
           <TransfersTable transfers={transfers} now={now} />
         )}
 
-        {!error && !filterError && transfers.length > 0 ? (
+        {!error && !filterError && transfers.length > 0 && paginationIsConsistent ? (
           <nav className="pagination" aria-label="Transfer pages">
             <span>
-              Showing {(currentPage - 1) * PAGE_SIZE + 1}–
-              {Math.min((currentPage - 1) * PAGE_SIZE + transfers.length, total)} of {total}
+              Showing {pageStart}–{pageEnd} of {total}
             </span>
             <div>
               <button
@@ -510,9 +566,17 @@ function isHealthResponse(value: unknown): value is HealthResponse {
   return (
     (response.lastProcessedBlock === null || Number.isSafeInteger(response.lastProcessedBlock)) &&
     (response.checkpointAgeSeconds === null || Number.isSafeInteger(response.checkpointAgeSeconds)) &&
+    Number.isSafeInteger(response.retentionDays) &&
+    Number(response.retentionDays) >= 1 && Number(response.retentionDays) <= 365 &&
     Number.isSafeInteger(response.indexedEvents) &&
     (response.indexError === null || typeof response.indexError === "string")
   );
+}
+
+function getApiError(value: unknown) {
+  if (typeof value !== "object" || value === null) return null;
+  const error = (value as Record<string, unknown>).error;
+  return typeof error === "string" && error.trim() ? error : null;
 }
 
 function isTransfer(value: unknown): value is Transfer {

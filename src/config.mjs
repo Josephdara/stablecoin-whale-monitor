@@ -73,9 +73,11 @@ export function loadApiConfig(env = process.env) {
     port: integer(env, "API_PORT", { min: 1, max: 65_535 }),
     host: env.API_HOST?.trim() || "127.0.0.1",
     refreshMs: integer(env, "API_REFRESH_MS", { min: 1_000, max: 3_600_000 }),
+    refreshDeadlineMs: optionalInteger(env, "API_REFRESH_DEADLINE_MS", 5_000, { min: 100, max: 60_000 }),
     maxPageSize: integer(env, "API_MAX_PAGE_SIZE", { min: 1, max: 200 }),
     allowedOrigin: env.API_ALLOWED_ORIGIN?.trim() || "",
     chainId: integer(env, "CHAIN_ID", { min: 1, max: 2 ** 31 - 1 }),
+    retentionDays: integer(env, "RETENTION_DAYS", { min: 1, max: 365 }),
   };
 }
 
@@ -126,6 +128,10 @@ function integer(env, key, { min, max = Number.MAX_SAFE_INTEGER }) {
     throw new Error(`${key} must be between ${min} and ${max}`);
   }
   return value;
+}
+
+function optionalInteger(env, key, fallback, bounds) {
+  return env[key]?.trim() ? integer(env, key, bounds) : fallback;
 }
 
 function decimal(env, key) {

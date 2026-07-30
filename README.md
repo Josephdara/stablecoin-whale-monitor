@@ -179,7 +179,6 @@ Google Cloud, v2:
 ├── test/                # Node test suite
 ├── Dockerfile           # v2: one image, three workloads
 ├── PLAYBOOK.md          # v2: full deployment record and incident log
-└── data/sample-preview/ # Small non-secret sample fixture
 ```
 
 ## Local setup
@@ -264,7 +263,9 @@ The v1 API binds to loopback:
 API_HOST=127.0.0.1
 API_PORT=3001
 API_REFRESH_MS=30000
+API_REFRESH_DEADLINE_MS=5000
 API_MAX_PAGE_SIZE=50
+RETENTION_DAYS=7
 ```
 
 Nginx listens on VM port `80`, serves `frontend/out`, and proxies `/api` to `127.0.0.1:3001`.
@@ -275,9 +276,29 @@ The container receives its configuration from the platform instead of files on a
 
 ## API
 
+The API serves a bounded window. `RETENTION_DAYS` is required, and every response is filtered on
+`blockTimestamp` at or after `now - RETENTION_DAYS`. The window is enforced in the process rather
+than relying on the events bucket lifecycle rule, because object deletion is asynchronous and does
+not remove events a long-running API has already loaded into memory. An event that ages out between
+two pages makes the earlier cursor expire, which returns `400`.
+
+### Index freshness
+
+Freshness is enforced on the request path, not by a background timer. Under request-based Cloud Run
+billing the CPU is throttled between requests, so a timer would fire late or not at all.
+
+Each request checks the age of the in-memory index. If it is older than `API_REFRESH_MS` the request
+awaits a storage refresh before responding; concurrent requests coalesce onto that single sweep. The
+process still refreshes once at startup, while container start has full CPU.
+
+`API_REFRESH_DEADLINE_MS` (default `5000`) bounds how long both cold and warm requests wait for
+storage. If the refresh fails or exceeds that deadline, transfer endpoints return `503` instead of
+serving a stale successful response. `/api/health` also returns `503` with degraded index status.
+The in-flight refresh remains coalesced so another request cannot start a competing storage sweep.
+
 ### `GET /api/transfers`
 
-Returns paginated transfer events, newest first.
+Returns paginated transfer events, newest first, within the retention window.
 
 Supported query parameters:
 
@@ -297,15 +318,13 @@ Examples:
 
 ### `GET /api/transfers/:txHash`
 
-Returns all indexed qualifying transfers for a transaction hash.
+Returns all indexed qualifying transfers for a transaction hash, within the retention window. A
+transaction whose transfers have aged out returns `404`.
 
 ### `GET /api/health`
 
-Returns API/index health, checkpoint information, indexed event count, and refresh status.
-
-### `GET /api/stats`
-
-Returns daily aggregate stats. This endpoint exists in the backend, although the frontend no longer displays a statistics section.
+Returns API/index health, checkpoint information, the configured `retentionDays`, the number of
+events inside that window, and refresh status.
 
 ## Deployment notes (v1)
 

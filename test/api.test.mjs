@@ -1,8 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EventIndex, getTransfersByTransactionHash } from "../src/api/app.mjs";
+import { once } from "node:events";
+import { createApiApp, EventIndex, getTransfersByTransactionHash } from "../src/api/app.mjs";
+import { loadApiConfig } from "../src/config.mjs";
 import { buildEvent, decodeTransferLog } from "../src/event.mjs";
 import { ADDRESS_A, ADDRESS_B, block, testConfig, transferLog } from "./helpers.mjs";
+
+const DAY_MS = 86_400_000;
+const ALL = { token: "", minimumAmount: "", address: "", limit: 50, cursor: "" };
 
 test("event index sorts newest first, filters, and paginates by cursor", async () => {
   const config = testConfig();
@@ -107,34 +112,408 @@ test("event index returns every transfer emitted by a transaction", async () => 
   );
 });
 
-test("stats aggregates a day's transfers by token and reports the largest", async () => {
+test("retention retains an event at exactly the window and drops it one millisecond later", async () => {
+  const config = testConfig();
+  const event = agedEvent(config, { blockNumber: 100, logIndex: 0, transaction: 1 }, 60_000);
+  const index = new EventIndex({ listEvents: async () => [event] }, 1, 7);
+  await index.refresh();
+  assert.equal(index.events.length, 1);
+
+  const boundary = Date.parse(event.blockTimestamp) + 7 * DAY_MS;
+  index.prune(boundary);
+  assert.equal(index.events.length, 1);
+  index.prune(boundary + 1);
+  assert.equal(index.events.length, 0);
+});
+
+test("retention drops only events outside the window and preserves newest-first order", async () => {
   const config = testConfig();
   const events = [
-    makeEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1, rawAmount: 100_000n * 1_000_000n }),
-    makeEvent(config, { token: "USDC", blockNumber: 101, logIndex: 0, transaction: 2, rawAmount: 250_000n * 1_000_000n }),
-    makeEvent(config, { token: "USDT", blockNumber: 102, logIndex: 0, transaction: 3, rawAmount: 300_000n * 1_000_000n }),
+    agedEvent(config, { blockNumber: 100, logIndex: 0, transaction: 1 }, 8 * DAY_MS),
+    agedEvent(config, { blockNumber: 101, logIndex: 0, transaction: 2 }, 6 * DAY_MS),
+    agedEvent(config, { blockNumber: 102, logIndex: 0, transaction: 3 }, 3_600_000),
   ];
-  const index = new EventIndex({ listEvents: async () => events });
+  const index = new EventIndex({ listEvents: async () => events }, 1, 7);
+  await index.refresh();
+  assert.deepEqual(index.events.map((event) => event.blockNumber), [102, 101]);
+});
+
+test("refresh prunes aged events even when no new objects are discovered", async () => {
+  const config = testConfig();
+  const entries = [{
+    name: "ethereum/ranges/000000000100-000000000100.json",
+    event: agedEvent(config, { blockNumber: 100, logIndex: 0, transaction: 1 }, 8 * DAY_MS),
+  }];
+  const storage = {
+    async *iterateEvents({ knownNames }) {
+      for (const entry of entries) {
+        if (knownNames.has(entry.name)) continue;
+        yield entry;
+      }
+    },
+  };
+  const index = new EventIndex(storage, 1, 0);
+  await index.refresh();
+  assert.equal(index.events.length, 1);
+
+  index.retentionDays = 7;
+  await index.refresh();
+  assert.equal(index.events.length, 0);
+});
+
+test("query totals and counts exclude events outside the retention window", async () => {
+  const config = testConfig();
+  const events = [
+    agedEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }, 8 * DAY_MS),
+    agedEvent(config, { token: "USDT", blockNumber: 101, logIndex: 0, transaction: 2 }, 3_600_000),
+  ];
+  const index = new EventIndex({ listEvents: async () => events }, 1, 0);
+  await index.refresh();
+  assert.equal(index.query(ALL).total, 2);
+
+  index.retentionDays = 7;
+  const visible = index.query(ALL);
+  assert.equal(visible.total, 1);
+  assert.equal(visible.counts.USDC, 0);
+  assert.equal(visible.counts.USDT, 1);
+});
+
+test("retention drops an event whose block timestamp cannot be parsed", async () => {
+  const config = testConfig();
+  const event = agedEvent(config, { blockNumber: 100, logIndex: 0, transaction: 1 }, 60_000);
+  const index = new EventIndex({ listEvents: async () => [event] }, 1, 7);
   await index.refresh();
 
-  // helpers.mjs block timestamps fall on 2026-06-30 (UTC).
-  const stats = index.stats({ date: "2026-06-30" });
-  assert.equal(stats.date, "2026-06-30");
-  assert.equal(stats.transferCount, 3);
-  assert.equal(stats.usdcVolume, "350000");
-  assert.equal(stats.usdtVolume, "300000");
-  assert.equal(stats.largestTransfer.token, "USDT");
-  assert.equal(stats.largestTransfer.amount, "300000");
-  assert.equal(stats.largestTransfer.transactionHash, events[2].transactionHash);
-
-  const empty = index.stats({ date: "2020-01-01" });
-  assert.equal(empty.transferCount, 0);
-  assert.equal(empty.usdcVolume, "0");
-  assert.equal(empty.usdtVolume, "0");
-  assert.equal(empty.largestTransfer, null);
+  index.events[0].blockTimestamp = "not-a-timestamp";
+  index.prune();
+  assert.equal(index.events.length, 0);
 });
+
+test("a cursor pointing at a pruned event returns a controlled 400", async () => {
+  const config = testConfig();
+  const events = [
+    agedEvent(config, { blockNumber: 102, logIndex: 0, transaction: 3 }, 3_600_000),
+    agedEvent(config, { blockNumber: 101, logIndex: 0, transaction: 2 }, 6 * DAY_MS),
+    agedEvent(config, { blockNumber: 100, logIndex: 0, transaction: 1 }, 6.5 * DAY_MS),
+  ];
+  const index = new EventIndex({ listEvents: async () => events }, 1, 7);
+  await index.refresh();
+
+  const first = index.query({ ...ALL, limit: 2 });
+  assert.deepEqual(first.items.map((event) => event.blockNumber), [102, 101]);
+  assert.ok(first.nextCursor);
+
+  index.retentionDays = 1;
+  assert.throws(
+    () => index.query({ ...ALL, limit: 2, cursor: first.nextCursor }),
+    (error) => error.status === 400,
+  );
+});
+
+test("transaction lookup excludes events outside the retention window", async () => {
+  const config = testConfig();
+  const event = agedEvent(config, { blockNumber: 100, logIndex: 0, transaction: 1 }, 8 * DAY_MS);
+  const index = new EventIndex({ listEvents: async () => [event] }, 1, 0);
+  await index.refresh();
+  assert.equal(index.findByTransactionHash(event.transactionHash).length, 1);
+
+  index.retentionDays = 7;
+  assert.equal(index.findByTransactionHash(event.transactionHash).length, 0);
+  assert.throws(
+    () => getTransfersByTransactionHash(index, event.transactionHash),
+    (error) => error.status === 404,
+  );
+});
+
+test("an unset retention window leaves every indexed event visible", async () => {
+  const config = testConfig();
+  const event = agedEvent(config, { blockNumber: 100, logIndex: 0, transaction: 1 }, 400 * DAY_MS);
+  const index = new EventIndex({ listEvents: async () => [event] });
+  await index.refresh();
+
+  index.prune();
+  assert.equal(index.events.length, 1);
+});
+
+test("a stale index refreshes on the request path and a fresh index does not", async () => {
+  const config = testConfig();
+  const events = [agedEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }, 3_600_000)];
+  let calls = 0;
+  const storage = { listEvents: async () => { calls += 1; return events; } };
+  const index = new EventIndex(storage, 1, 7);
+
+  await withApi({ config: apiConfig(), storage, index }, async (request) => {
+    const cold = await request("/api/transfers");
+    assert.equal(cold.status, 200);
+    assert.equal((await cold.json()).total, 1);
+    assert.equal(calls, 1);
+
+    await request("/api/transfers");
+    assert.equal(calls, 1);
+
+    index.refreshedAt = new Date(Date.now() - 60_000).toISOString();
+    await request("/api/transfers");
+    assert.equal(calls, 2);
+  });
+});
+
+test("concurrent freshness checks share a single storage sweep", async () => {
+  let calls = 0;
+  let release;
+  const storage = {
+    listEvents: async () => {
+      calls += 1;
+      await new Promise((resolve) => { release = resolve; });
+      return [];
+    },
+  };
+  const index = new EventIndex(storage);
+  const first = index.ensureFresh(30_000);
+  const second = index.ensureFresh(30_000);
+  release();
+  await Promise.all([first, second]);
+  assert.equal(calls, 1);
+});
+
+test("a startup refresh and request freshness check share one storage sweep", async () => {
+  let calls = 0;
+  let release;
+  const storage = {
+    listEvents: async () => {
+      calls += 1;
+      await new Promise((resolve) => { release = resolve; });
+      return [];
+    },
+  };
+  const index = new EventIndex(storage);
+  const startup = index.refresh();
+  const request = index.ensureFresh(30_000);
+  release();
+  await Promise.all([startup, request]);
+  assert.equal(calls, 1);
+});
+
+test("staleness includes an invalid timestamp and the exact maximum-age boundary", () => {
+  const index = new EventIndex({});
+  assert.equal(index.isStale(30_000, 100_000), true);
+
+  index.refreshedAt = "not-a-timestamp";
+  assert.equal(index.isStale(30_000, 100_000), true);
+
+  index.refreshedAt = new Date(70_000).toISOString();
+  assert.equal(index.isStale(30_000, 99_999), false);
+  assert.equal(index.isStale(30_000, 100_000), true);
+});
+
+test("a failed required refresh returns 503 and reports degraded health", async () => {
+  const config = testConfig();
+  const events = [agedEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }, 3_600_000)];
+  let calls = 0;
+  const storage = {
+    listEvents: async () => {
+      calls += 1;
+      if (calls > 1) throw new Error("gs://swm-events unreachable");
+      return events;
+    },
+    readCheckpoint: async () => null,
+  };
+  const index = new EventIndex(storage, 1, 7);
+  await index.refresh();
+  index.refreshedAt = new Date(Date.now() - 60_000).toISOString();
+
+  await withApi({ config: apiConfig(), storage, index }, async (request) => {
+    const transfers = await request("/api/transfers");
+    assert.equal(transfers.status, 503);
+    assert.equal((await transfers.json()).error, "Event index could not be refreshed");
+
+    const health = await request("/api/health");
+    assert.equal(health.status, 503);
+    const body = await health.json();
+    assert.equal(body.status, "degraded");
+    assert.equal(body.indexedEvents, 1);
+    assert.match(body.indexError, /unreachable/);
+  });
+});
+
+test("a never-loaded index that cannot reach storage returns 503 without leaking detail", async () => {
+  const storage = {
+    listEvents: async () => { throw new Error("gs://swm-events unreachable"); },
+    readCheckpoint: async () => null,
+  };
+  const index = new EventIndex(storage, 1, 7);
+
+  await withApi({ config: apiConfig(), storage, index }, async (request) => {
+    const transfers = await request("/api/transfers");
+    assert.equal(transfers.status, 503);
+    assert.equal((await transfers.json()).error, "Event index could not be refreshed");
+
+    const health = await request("/api/health");
+    assert.equal(health.status, 503);
+    assert.equal((await health.json()).indexedEvents, 0);
+  });
+});
+
+test("a slow refresh on a warm index returns 503 at the deadline", async () => {
+  const config = testConfig();
+  const events = [agedEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }, 3_600_000)];
+  let calls = 0;
+  let release = () => {};
+  const storage = {
+    listEvents: async () => {
+      calls += 1;
+      if (calls > 1) await new Promise((resolve) => { release = resolve; });
+      return events;
+    },
+  };
+  const index = new EventIndex(storage, 1, 7);
+  await index.refresh();
+  index.refreshedAt = new Date(Date.now() - 60_000).toISOString();
+
+  await withApi({ config: apiConfig({ refreshDeadlineMs: 100 }), storage, index }, async (request) => {
+    const response = await request("/api/transfers");
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "Event index could not be refreshed");
+    assert.equal(calls, 2);
+    release();
+    await index.refreshPromise;
+  });
+});
+
+test("a never-loaded index returns 503 at the refresh deadline", async () => {
+  const config = testConfig();
+  const events = [agedEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }, 3_600_000)];
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const storage = { listEvents: async () => { await pending; return events; } };
+  const index = new EventIndex(storage, 1, 7);
+
+  await withApi({ config: apiConfig({ refreshDeadlineMs: 100 }), storage, index }, async (request) => {
+    const response = await request("/api/transfers");
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "Event index could not be refreshed");
+    release();
+    await index.refreshPromise;
+  });
+});
+
+test("invalid transfer parameters are rejected before storage refresh", async () => {
+  let calls = 0;
+  const storage = {
+    listEvents: async () => {
+      calls += 1;
+      return [];
+    },
+  };
+  const index = new EventIndex(storage, 1, 7);
+
+  await withApi({ config: apiConfig(), storage, index }, async (request) => {
+    const filter = await request("/api/transfers?token=not-a-token");
+    assert.equal(filter.status, 400);
+
+    const cursor = await request("/api/transfers?cursor=not-base64-json");
+    assert.equal(cursor.status, 400);
+
+    const transaction = await request("/api/transfers/not-a-transaction-hash");
+    assert.equal(transaction.status, 400);
+    assert.equal(calls, 0);
+  });
+});
+
+test("transaction lookup and health refresh stale indexes on their request paths", async () => {
+  const config = testConfig();
+  const event = agedEvent(
+    config,
+    { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 },
+    3_600_000,
+  );
+  let calls = 0;
+  const storage = {
+    listEvents: async () => {
+      calls += 1;
+      return [event];
+    },
+    readCheckpoint: async () => null,
+  };
+  const index = new EventIndex(storage, 1, 7);
+
+  await withApi({ config: apiConfig(), storage, index }, async (request) => {
+    const transaction = await request(`/api/transfers/${event.transactionHash}`);
+    assert.equal(transaction.status, 200);
+    assert.equal((await transaction.json()).total, 1);
+    assert.equal(calls, 1);
+
+    index.refreshedAt = new Date(Date.now() - 60_000).toISOString();
+    const health = await request("/api/health");
+    assert.equal(health.status, 200);
+    assert.equal((await health.json()).status, "ok");
+    assert.equal(calls, 2);
+  });
+});
+
+test("api configuration accepts an optional refresh deadline", () => {
+  const base = {
+    STORAGE_BACKEND: "local",
+    API_PORT: "3001",
+    API_REFRESH_MS: "30000",
+    API_MAX_PAGE_SIZE: "50",
+    CHAIN_ID: "1",
+    RETENTION_DAYS: "7",
+  };
+  assert.equal(loadApiConfig({ ...base }).refreshDeadlineMs, 5_000);
+  assert.equal(loadApiConfig({ ...base, API_REFRESH_DEADLINE_MS: "2000" }).refreshDeadlineMs, 2_000);
+  assert.throws(() => loadApiConfig({ ...base, API_REFRESH_DEADLINE_MS: "99" }), /API_REFRESH_DEADLINE_MS/);
+  assert.throws(() => loadApiConfig({ ...base, API_REFRESH_DEADLINE_MS: "60001" }), /API_REFRESH_DEADLINE_MS/);
+  assert.throws(() => loadApiConfig({ ...base, API_REFRESH_DEADLINE_MS: "abc" }), /API_REFRESH_DEADLINE_MS/);
+});
+
+test("api configuration requires a valid retention window", () => {
+  const base = {
+    STORAGE_BACKEND: "local",
+    API_PORT: "3001",
+    API_REFRESH_MS: "30000",
+    API_MAX_PAGE_SIZE: "50",
+    CHAIN_ID: "1",
+    RETENTION_DAYS: "7",
+  };
+  assert.equal(loadApiConfig({ ...base }).retentionDays, 7);
+  assert.throws(() => loadApiConfig({ ...base, RETENTION_DAYS: "" }), /RETENTION_DAYS/);
+  assert.throws(() => loadApiConfig({ ...base, RETENTION_DAYS: "0" }), /RETENTION_DAYS/);
+  assert.throws(() => loadApiConfig({ ...base, RETENTION_DAYS: "7.5" }), /RETENTION_DAYS/);
+  assert.throws(() => loadApiConfig({ ...base, RETENTION_DAYS: "366" }), /RETENTION_DAYS/);
+});
+
+function apiConfig(overrides = {}) {
+  return {
+    chainId: 1,
+    maxPageSize: 50,
+    retentionDays: 7,
+    refreshMs: 30_000,
+    refreshDeadlineMs: 5_000,
+    allowedOrigin: "",
+    ...overrides,
+  };
+}
+
+async function withApi(options, run) {
+  const server = createApiApp(options).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const { port } = server.address();
+    await run((path) => fetch(`http://127.0.0.1:${port}${path}`));
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+}
 
 function makeEvent(config, options) {
   const transfer = decodeTransferLog(transferLog(config, { from: ADDRESS_A, to: ADDRESS_B, ...options }), config);
   return buildEvent(transfer, block(options.blockNumber), config);
+}
+
+function agedEvent(config, options, ageMs) {
+  const transfer = decodeTransferLog(transferLog(config, { from: ADDRESS_A, to: ADDRESS_B, ...options }), config);
+  const source = block(options.blockNumber);
+  const timestamp = new Date(Date.now() - ageMs).toISOString();
+  return buildEvent(transfer, { ...source, timestamp }, config);
 }

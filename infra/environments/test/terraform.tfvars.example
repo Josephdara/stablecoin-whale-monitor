@@ -1,0 +1,89 @@
+project_id  = "replace-with-test-project-id"
+environment = "test"
+region      = "us-east4"
+zone        = "us-east4-a"
+name_prefix = "swm-test"
+
+common_labels = {
+  application = "stablecoin-whale-monitor"
+  environment = "test"
+  managed_by  = "terraform"
+}
+
+artifact_repository_id = "swm-app"
+application_image      = ""
+
+frontend_bucket_name   = "replace-with-unique-frontend-bucket"
+events_bucket_name     = "replace-with-unique-events-bucket"
+state_bucket_name      = "replace-with-unique-app-state-bucket"
+bucket_location        = "US-EAST4"
+storage_force_destroy  = true
+enable_event_lifecycle = false
+event_retention_days   = 7
+
+api_service_name               = "swm-api-test"
+alerter_service_name           = "swm-alerter-test"
+indexer_worker_pool_name       = "swm-indexer-test"
+api_service_account_id         = "swm-test-api"
+indexer_service_account_id     = "swm-test-indexer"
+alerter_service_account_id     = "swm-test-alerter"
+pubsub_push_service_account_id = "swm-test-pubsub-push"
+cloud_build_service_account_id = "swm-test-cloud-build"
+
+chain_id                = 1
+start_block             = 25638000
+confirmation_buffer     = 6
+block_batch_size        = 5
+rpc_log_chunk_size      = 5
+poll_interval_ms        = 30000
+minimum_transfer_amount = "100000"
+rpc_timeout_ms          = 20000
+rpc_max_retries         = 2
+rpc_retry_base_ms       = 5000
+max_rpc_response_bytes  = 10485760
+usdc_address            = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+usdt_address            = "0xdac17f958d2ee523a2206206994597c13d831ec7"
+transfer_topic          = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+usdc_decimals           = 6
+usdt_decimals           = 6
+indexer_lock_file       = "/app/data/indexer.lock"
+
+api_refresh_ms          = 30000
+api_refresh_deadline_ms = 5000
+api_max_page_size       = 50
+api_allowed_origin      = "https://swm.example.com"
+api_min_instances       = 0
+api_max_instances       = 3
+api_concurrency         = 80
+api_timeout_seconds     = 60
+api_cpu                 = "1"
+api_memory              = "512Mi"
+
+alert_minimum_amount    = "1000000"
+alerter_min_instances   = 0
+alerter_max_instances   = 1
+alerter_timeout_seconds = 60
+alerter_cpu             = "1"
+alerter_memory          = "512Mi"
+indexer_cpu             = "1"
+indexer_memory          = "512Mi"
+
+event_topic_name               = "swm-events-test"
+dead_letter_topic_name         = "swm-alerts-dlq-test"
+alert_subscription_name        = "swm-alerts-push-test"
+dead_letter_subscription_name  = "swm-alerts-dlq-catch-test"
+pubsub_ack_deadline_seconds    = 30
+pubsub_max_delivery_attempts   = 5
+pubsub_minimum_backoff_seconds = 10
+pubsub_maximum_backoff_seconds = 600
+event_object_prefix            = "ethereum/ranges/"
+
+domain_name                     = "swm.example.com"
+dns_managed_zone_name           = ""
+certificate_name                = "swm-test-certificate"
+html_cache_ttl_seconds          = 60
+asset_cache_ttl_seconds         = 31536000
+frontend_edge_policy_name       = "swm-frontend-edge-test"
+api_security_policy_name        = "swm-api-security-test"
+api_rate_limit_requests         = 60
+api_rate_limit_interval_seconds = 60

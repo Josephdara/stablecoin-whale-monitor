@@ -7,6 +7,9 @@
 **/.env.*
 !.env.example
 !**/.env.example
+infra/environments/*/*.env
+infra/environments/*/terraform.tfvars
+infra/environments/*/.terraform/
 
 # Google Cloud / service-account credentials
 *service-account*.json
@@ -25,6 +28,7 @@
 node_modules/
 frontend/node_modules/
 .pnpm-store/
+output/
 
 # Build output and generated TypeScript state
 frontend/.next/
@@ -44,3 +48,4 @@ SWM_GCP_Design.pdf
 coverage/
 .DS_Store
 cmd
+docs/

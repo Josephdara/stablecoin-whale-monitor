@@ -1,10 +1,11 @@
 import express from "express";
-import { eventKey, formatAmount, parseAmount } from "../event.mjs";
+import { eventKey, parseAmount } from "../event.mjs";
 
 export class EventIndex {
-  constructor(storage, chainId = 1) {
+  constructor(storage, chainId = 1, retentionDays = 0) {
     this.storage = storage;
     this.chainId = chainId;
+    this.retentionDays = retentionDays;
     this.events = [];
     this.eventObjectNames = new Set();
     this.refreshedAt = null;
@@ -43,6 +44,7 @@ export class EventIndex {
         for (const event of events) validateEvent(event, this.chainId);
         this.events = deduplicate(events).sort(compareNewestFirst);
       }
+      this.prune();
       this.refreshedAt = new Date().toISOString();
       this.lastError = null;
     } catch (error) {
@@ -51,7 +53,43 @@ export class EventIndex {
     }
   }
 
+  isStale(maxAgeMs, now = Date.now()) {
+    if (this.refreshedAt === null) return true;
+    const refreshedAtMs = Date.parse(this.refreshedAt);
+    return !Number.isFinite(refreshedAtMs) || now - refreshedAtMs >= maxAgeMs;
+  }
+
+  async ensureFresh(maxAgeMs, refreshDeadlineMs = 0) {
+    if (!this.isStale(maxAgeMs)) return;
+    const refreshed = this.refresh();
+    if (!refreshDeadlineMs) {
+      await refreshed;
+      return;
+    }
+    let deadlineTimer;
+    try {
+      await Promise.race([
+        refreshed,
+        new Promise((_, reject) => {
+          deadlineTimer = setTimeout(
+            () => reject(new Error(`Event index refresh exceeded ${refreshDeadlineMs}ms`)),
+            refreshDeadlineMs,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(deadlineTimer);
+    }
+  }
+
+  prune(now = Date.now()) {
+    if (!this.retentionDays) return;
+    const cutoff = now - this.retentionDays * 86_400_000;
+    this.events = this.events.filter((event) => Date.parse(event.blockTimestamp) >= cutoff);
+  }
+
   query({ token, minimumAmount, address, limit, cursor }) {
+    this.prune();
     const filtered = this.events.filter((event) => {
       if (token && event.token !== token) return false;
       if (address && event.from !== address && event.to !== address) return false;
@@ -81,44 +119,12 @@ export class EventIndex {
   }
 
   findByTransactionHash(transactionHash) {
+    this.prune();
     return this.events.filter(
       (event) => event.transactionHash.toLowerCase() === transactionHash.toLowerCase(),
     );
   }
 
-  stats({ date } = {}) {
-    const day = date ?? utcDateString(new Date());
-    let usdcVolume = 0n;
-    let usdtVolume = 0n;
-    let transferCount = 0;
-    let largestTransfer = null;
-    let largestValue = -1n;
-
-    for (const event of this.events) {
-      if (utcDateString(new Date(event.blockTimestamp)) !== day) continue;
-      transferCount += 1;
-      const value = parseAmount(event.amount, 6);
-      if (event.token === "USDC") usdcVolume += value;
-      else if (event.token === "USDT") usdtVolume += value;
-      if (value > largestValue) {
-        largestValue = value;
-        largestTransfer = {
-          token: event.token,
-          amount: event.amount,
-          transactionHash: event.transactionHash,
-        };
-      }
-    }
-
-    return {
-      date: day,
-      transferCount,
-      usdcVolume: formatAmount(usdcVolume, 6),
-      usdtVolume: formatAmount(usdtVolume, 6),
-      largestTransfer,
-      refreshedAt: this.refreshedAt,
-    };
-  }
 }
 
 export function createApiApp({ config, storage, index }) {
@@ -133,31 +139,25 @@ export function createApiApp({ config, storage, index }) {
     next();
   });
 
-  app.get("/api/transfers", (request, response, next) => {
+  app.get("/api/transfers", async (request, response, next) => {
     try {
       const token = parseToken(request.query.token);
       const minimumAmount = parseMinimum(request.query.minimumAmount);
       const address = parseAddress(request.query.address);
       const limit = parseLimit(request.query.limit, config.maxPageSize);
       const cursor = parseCursor(request.query.cursor);
+      await requireFreshIndex(index, config);
       response.json(index.query({ token, minimumAmount, address, limit, cursor }));
     } catch (error) {
       next(error);
     }
   });
 
-  app.get("/api/transfers/:txHash", (request, response, next) => {
+  app.get("/api/transfers/:txHash", async (request, response, next) => {
     try {
-      response.json(getTransfersByTransactionHash(index, request.params.txHash));
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.get("/api/stats", (request, response, next) => {
-    try {
-      const date = parseDate(request.query.date);
-      response.json(index.stats({ date }));
+      const transactionHash = parseTransactionHash(request.params.txHash);
+      await requireFreshIndex(index, config);
+      response.json(getTransfersByTransactionHash(index, transactionHash));
     } catch (error) {
       next(error);
     }
@@ -165,20 +165,30 @@ export function createApiApp({ config, storage, index }) {
 
   app.get("/api/health", async (_request, response, next) => {
     try {
+      let refreshError = null;
+      try {
+        await index.ensureFresh(config.refreshMs, config.refreshDeadlineMs);
+      } catch (error) {
+        refreshError = error instanceof Error ? error.message : String(error);
+      }
+      index.prune();
       const checkpointState = await storage.readCheckpoint();
       const checkpoint = checkpointState?.value ?? null;
       const checkpointAgeSeconds = checkpoint
         ? Math.max(0, Math.floor((Date.now() - Date.parse(checkpoint.updatedAt)) / 1000))
         : null;
-      response.status(index.lastError ? 503 : 200).json({
-        status: index.lastError ? "degraded" : "ok",
+      const indexError = index.lastError ??
+        (index.isStale(config.refreshMs) ? refreshError : null);
+      response.status(indexError ? 503 : 200).json({
+        status: indexError ? "degraded" : "ok",
         chainId: config.chainId,
         lastProcessedBlock: checkpoint?.lastProcessedBlock ?? null,
         checkpointUpdatedAt: checkpoint?.updatedAt ?? null,
         checkpointAgeSeconds,
+        retentionDays: config.retentionDays,
         indexedEvents: index.events.length,
         indexRefreshedAt: index.refreshedAt,
-        indexError: index.lastError,
+        indexError,
       });
     } catch (error) {
       next(error);
@@ -187,7 +197,8 @@ export function createApiApp({ config, storage, index }) {
 
   app.use((error, _request, response, _next) => {
     const status = Number(error?.status) || 500;
-    response.status(status).json({ error: status >= 500 ? "Internal server error" : error.message });
+    const masked = status >= 500 && !error?.expose;
+    response.status(status).json({ error: masked ? "Internal server error" : error.message });
   });
 
   return app;
@@ -274,6 +285,7 @@ function parseLimit(value, max) {
 function parseCursor(value) {
   if (value === undefined || value === "") return "";
   if (typeof value !== "string" || value.length > 512) throw httpError(400, "Invalid cursor");
+  decodeCursor(value);
   return value;
 }
 
@@ -284,19 +296,6 @@ function parseTransactionHash(value) {
   return value.toLowerCase();
 }
 
-function parseDate(value) {
-  if (value === undefined || value === "") return undefined;
-  if (
-    typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
-    Number.isNaN(Date.parse(`${value}T00:00:00Z`))
-  ) throw httpError(400, "Invalid date filter");
-  return value;
-}
-
-function utcDateString(date) {
-  return date.toISOString().slice(0, 10);
-}
-
 function isAddress(value) {
   return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
 }
@@ -305,4 +304,18 @@ function httpError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+function serviceUnavailable(message) {
+  const error = httpError(503, message);
+  error.expose = true;
+  return error;
+}
+
+async function requireFreshIndex(index, config) {
+  try {
+    await index.ensureFresh(config.refreshMs, config.refreshDeadlineMs);
+  } catch {
+    throw serviceUnavailable("Event index could not be refreshed");
+  }
 }

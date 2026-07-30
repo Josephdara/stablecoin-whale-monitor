@@ -23,5 +23,6 @@
     "overrides": {
       "postcss": "^8.5.10"
     }
-  }
+  },
+  "packageManager": "pnpm@9.15.9"
 }
