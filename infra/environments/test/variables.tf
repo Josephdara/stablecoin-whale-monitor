@@ -536,3 +536,4 @@ variable "terraform_state_bucket_name" {
   type        = string
   default     = "swm-gcp-state-v2"
 }
+

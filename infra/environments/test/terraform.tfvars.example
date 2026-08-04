@@ -87,3 +87,6 @@ frontend_edge_policy_name       = "swm-frontend-edge-test"
 api_security_policy_name        = "swm-api-security-test"
 api_rate_limit_requests         = 60
 api_rate_limit_interval_seconds = 60
+
+alert_email_to         = "recipient@example.com"
+alert_email_from       = "sender@gmail.com"

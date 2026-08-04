@@ -114,9 +114,10 @@ resource "google_storage_bucket_iam_member" "build_terraform_state" {
 # Cloud Build actAs for service accounts for scoped access
 resource "google_service_account_iam_member" "build_act_as" {
   for_each = {
-    api     = google_service_account.api.name
-    indexer = google_service_account.indexer.name
-    alerter = google_service_account.alerter.name
+    api         = google_service_account.api.name
+    indexer     = google_service_account.indexer.name
+    alerter     = google_service_account.alerter.name
+    pubsub_push = google_service_account.pubsub_push.name
   }
 
   service_account_id = each.value

@@ -89,3 +89,114 @@ module "iam" {
 
   depends_on = [module.secrets]
 }
+
+module "cloud_run" {
+  source = "../../modules/cloud-run"
+
+  project_id        = var.project_id
+  region            = var.region
+  application_image = var.application_image
+  labels            = var.common_labels
+  chain_id          = var.chain_id
+
+  events_bucket_name = module.storage.events_bucket_name
+  state_bucket_name  = module.storage.state_bucket_name
+  rpc_secret_id      = module.secrets.rpc_secret_id
+  gmail_secret_id    = module.secrets.gmail_secret_id
+
+  api_service_name          = var.api_service_name
+  api_service_account_email = module.iam.api_service_account_email
+  api_min_instances         = var.api_min_instances
+  api_max_instances         = var.api_max_instances
+  api_concurrency           = var.api_concurrency
+  api_timeout_seconds       = var.api_timeout_seconds
+  api_refresh_ms            = var.api_refresh_ms
+  api_refresh_deadline_ms   = var.api_refresh_deadline_ms
+  api_max_page_size         = var.api_max_page_size
+  api_allowed_origin        = var.api_allowed_origin
+  event_retention_days      = var.event_retention_days
+  api_cpu                   = var.api_cpu
+  api_memory                = var.api_memory
+
+  alerter_service_name              = var.alerter_service_name
+  alerter_service_account_email     = module.iam.alerter_service_account_email
+  pubsub_push_service_account_email = module.iam.pubsub_push_service_account_email
+  alerter_min_instances             = var.alerter_min_instances
+  alerter_max_instances             = var.alerter_max_instances
+  alerter_timeout_seconds           = var.alerter_timeout_seconds
+  alert_minimum_amount              = var.alert_minimum_amount
+  alert_email_to                    = var.alert_email_to
+  alert_email_from                  = var.alert_email_from
+  alerter_cpu                       = var.alerter_cpu
+  alerter_memory                    = var.alerter_memory
+
+  indexer_worker_pool_name      = var.indexer_worker_pool_name
+  indexer_service_account_email = module.iam.indexer_service_account_email
+  start_block                   = var.start_block
+  confirmation_buffer           = var.confirmation_buffer
+  block_batch_size              = var.block_batch_size
+  rpc_log_chunk_size            = var.rpc_log_chunk_size
+  poll_interval_ms              = var.poll_interval_ms
+  rpc_timeout_ms                = var.rpc_timeout_ms
+  rpc_max_retries               = var.rpc_max_retries
+  rpc_retry_base_ms             = var.rpc_retry_base_ms
+  max_rpc_response_bytes        = var.max_rpc_response_bytes
+  minimum_transfer_amount       = var.minimum_transfer_amount
+  transfer_topic                = var.transfer_topic
+  usdc_address                  = var.usdc_address
+  usdc_decimals                 = var.usdc_decimals
+  usdt_address                  = var.usdt_address
+  usdt_decimals                 = var.usdt_decimals
+  indexer_lock_file             = var.indexer_lock_file
+  indexer_cpu                   = var.indexer_cpu
+  indexer_memory                = var.indexer_memory
+
+  depends_on = [module.iam]
+}
+
+module "pubsub" {
+  source = "../../modules/pubsub"
+
+  project_id     = var.project_id
+  project_number = data.google_project.current.number
+  labels         = var.common_labels
+
+  events_bucket_name  = module.storage.events_bucket_name
+  event_object_prefix = var.event_object_prefix
+
+  alerter_push_endpoint             = module.cloud_run.alerter_push_endpoint
+  pubsub_push_service_account_email = module.iam.pubsub_push_service_account_email
+
+  event_topic_name              = var.event_topic_name
+  dead_letter_topic_name        = var.dead_letter_topic_name
+  alert_subscription_name       = var.alert_subscription_name
+  dead_letter_subscription_name = var.dead_letter_subscription_name
+
+  pubsub_ack_deadline_seconds    = var.pubsub_ack_deadline_seconds
+  pubsub_max_delivery_attempts   = var.pubsub_max_delivery_attempts
+  pubsub_minimum_backoff_seconds = var.pubsub_minimum_backoff_seconds
+  pubsub_maximum_backoff_seconds = var.pubsub_maximum_backoff_seconds
+}
+
+module "edge" {
+  source = "../../modules/edge"
+
+  project_id     = var.project_id
+  project_number = data.google_project.current.number
+  region         = var.region
+  name_prefix    = var.name_prefix
+
+  domain_name      = var.domain_name
+  certificate_name = var.certificate_name
+
+  frontend_bucket_name = module.storage.frontend_bucket_name
+  api_service_name     = module.cloud_run.api_service_name
+
+  html_cache_ttl_seconds  = var.html_cache_ttl_seconds
+  asset_cache_ttl_seconds = var.asset_cache_ttl_seconds
+
+  frontend_edge_policy_name       = var.frontend_edge_policy_name
+  api_security_policy_name        = var.api_security_policy_name
+  api_rate_limit_requests         = var.api_rate_limit_requests
+  api_rate_limit_interval_seconds = var.api_rate_limit_interval_seconds
+}
