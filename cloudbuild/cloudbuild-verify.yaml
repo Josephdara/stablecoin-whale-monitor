@@ -1,0 +1,56 @@
+serviceAccount: projects/${PROJECT_ID}/serviceAccounts/swm-cloud-build-verify@${PROJECT_ID}.iam.gserviceaccount.com
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+steps:
+  - id: install
+    name: node:20-bookworm-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        corepack enable && corepack prepare pnpm@9.15.9 --activate
+        pnpm install --frozen-lockfile
+        pnpm --dir frontend install --frozen-lockfile
+
+  - id: backend-tests
+    name: node:20-bookworm-slim
+    entrypoint: bash
+    args: ["-c", "corepack enable && pnpm test"]
+
+  - id: frontend-typecheck
+    name: node:20-bookworm-slim
+    entrypoint: bash
+    args: ["-c", "corepack enable && pnpm --dir frontend typecheck"]
+
+  - id: frontend-build
+    name: node:20-bookworm-slim
+    entrypoint: bash
+    env: ["NEXT_PUBLIC_API_BASE_URL="]
+    args:
+      - -c
+      - |
+        set -e
+        corepack enable && pnpm --dir frontend build
+        # URL-shaped only: a bare "localhost" match hits a bundled URL parser
+        # in _next/static and would fail every build.
+        if grep -rqE "https?://(localhost|127\.0\.0\.1):[0-9]+" frontend/out/; then
+          echo "localhost URL baked into the static export" >&2
+          exit 1
+        fi
+
+  - id: terraform-verify
+    name: hashicorp/terraform:1.15.8
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        set -e
+        terraform fmt -check -recursive infra
+        terraform -chdir=infra/environments/test init -input=false -backend=false
+        terraform -chdir=infra/environments/test validate
+
+timeout: 1200s

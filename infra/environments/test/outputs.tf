@@ -114,3 +114,17 @@ output "dns_authorization_record" {
   description = "CNAME required for certificate issuance and renewal."
   value       = module.edge.dns_authorization_record
 }
+
+output "pipeline_service_account_emails" {
+  description = "Verify, CI, and CD identities. Each must be named on its own trigger."
+  value = {
+    verify = module.cloud_build.verify_service_account_email
+    ci     = module.cloud_build.ci_service_account_email
+    cd     = module.cloud_build.cd_service_account_email
+  }
+}
+
+output "build_artifacts_bucket" {
+  description = "Release archive location, substituted into the CI and CD pipelines."
+  value       = module.cloud_build.artifacts_bucket_name
+}

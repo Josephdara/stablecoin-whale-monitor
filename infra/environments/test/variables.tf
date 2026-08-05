@@ -537,3 +537,20 @@ variable "terraform_state_bucket_name" {
   default     = "swm-gcp-state-v2"
 }
 
+variable "verify_service_account_id" {
+  description = "Account ID for the PR verification identity. Environment-neutral: service accounts are project-scoped."
+  type        = string
+  default     = "swm-cloud-build-verify"
+}
+
+variable "ci_service_account_id" {
+  description = "Account ID for the build-and-publish identity."
+  type        = string
+  default     = "swm-cloud-build-ci"
+}
+
+variable "cd_service_account_id" {
+  description = "Account ID for the deploy identity."
+  type        = string
+  default     = "swm-cloud-build-cd"
+}

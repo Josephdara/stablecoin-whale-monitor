@@ -23,3 +23,17 @@ output "cloud_build_service_account_email" {
   description = "Build and deploy identity."
   value       = google_service_account.cloud_build.email
 }
+output "api_service_account_name" {
+  description = "projects/<project>/serviceAccounts/<email> form, for actAs bindings."
+  value       = google_service_account.api.name
+}
+
+output "alerter_service_account_name" {
+  description = "projects/<project>/serviceAccounts/<email> form, for actAs bindings."
+  value       = google_service_account.alerter.name
+}
+
+output "indexer_service_account_name" {
+  description = "projects/<project>/serviceAccounts/<email> form, for actAs bindings."
+  value       = google_service_account.indexer.name
+}

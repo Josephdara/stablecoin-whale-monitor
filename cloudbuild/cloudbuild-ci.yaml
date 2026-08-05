@@ -1,0 +1,142 @@
+# Trusted pushes to main. Produces immutable artifacts. Deploys nothing.
+serviceAccount: projects/${PROJECT_ID}/serviceAccounts/swm-cloud-build-ci@${PROJECT_ID}.iam.gserviceaccount.com
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+substitutions:
+  _REGION: us-east4
+  _REPO: swm-app
+  _IMAGE_NAME: stablecoin-whale-monitor
+  _ARTIFACTS_BUCKET: swm-gcp-test-v2-build-artifacts
+
+steps:
+  # COMMIT_SHA and SHORT_SHA are populated only for trigger-invoked builds. A
+  # manual gcloud builds submit would tag the image ":" and publish to
+  # releases//<id>. Fail in seconds rather than after a full build.
+  - id: preflight
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        test -n "${COMMIT_SHA}" || { echo "COMMIT_SHA empty: run via the main-branch trigger" >&2; exit 1; }
+        test -n "${SHORT_SHA}"  || { echo "SHORT_SHA empty: run via the main-branch trigger" >&2; exit 1; }
+        echo "Building ${COMMIT_SHA}"
+
+  - id: install
+    name: node:20-bookworm-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        corepack enable && corepack prepare pnpm@9.15.9 --activate
+        pnpm install --frozen-lockfile
+        pnpm --dir frontend install --frozen-lockfile
+
+  - id: backend-tests
+    name: node:20-bookworm-slim
+    entrypoint: bash
+    args: ["-c", "corepack enable && pnpm test"]
+
+  - id: frontend-typecheck
+    name: node:20-bookworm-slim
+    entrypoint: bash
+    args: ["-c", "corepack enable && pnpm --dir frontend typecheck"]
+
+  # No state access: this identity holds no bucket permissions beyond artifacts.
+  - id: terraform-verify
+    name: hashicorp/terraform:1.15.8
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        set -e
+        terraform fmt -check -recursive infra
+        terraform -chdir=infra/environments/test init -input=false -backend=false
+        terraform -chdir=infra/environments/test validate
+
+  - id: frontend-build
+    name: node:20-bookworm-slim
+    entrypoint: bash
+    env: ["NEXT_PUBLIC_API_BASE_URL="]
+    args:
+      - -c
+      - |
+        set -e
+        corepack enable && pnpm --dir frontend build
+        # URL-shaped only: a bare "localhost" match hits a bundled URL parser
+        # in _next/static and would fail every build.
+        if grep -rqE "https?://(localhost|127\.0\.0\.1):[0-9]+" frontend/out/; then
+          echo "localhost URL baked into the static export" >&2
+          exit 1
+        fi
+        tar -czf /workspace/frontend.tar.gz -C frontend out
+
+  - id: image-build-push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - buildx
+      - build
+      - --platform=linux/amd64
+      - --provenance=false
+      - --sbom=false
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE_NAME}:${SHORT_SHA}
+      - --push
+      - .
+
+  - id: manifest
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        DIGEST=$$(gcloud artifacts docker images describe \
+          ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE_NAME}:${SHORT_SHA} \
+          --format='value(image_summary.fully_qualified_digest)')
+        case "$$DIGEST" in
+          *@sha256:*) ;;
+          *) echo "Digest resolution failed: $$DIGEST" >&2; exit 1 ;;
+        esac
+
+        SHA256=$$(sha256sum /workspace/frontend.tar.gz | cut -d' ' -f1)
+
+        # Sortable release id: lexicographic order is chronological, which is
+        # what lets CD resolve the newest build for a commit. A bare BUILD_ID
+        # is a UUID and would not sort.
+        STAMP=$$(date -u +%Y%m%dT%H%M%SZ)
+        echo "$$STAMP" > /workspace/stamp.txt
+
+        cat > /workspace/manifest.json <<EOF
+        {
+          "commitSha": "${COMMIT_SHA}",
+          "imageDigest": "$$DIGEST",
+          "frontendSha256": "$$SHA256",
+          "buildId": "${BUILD_ID}",
+          "builtAt": "$$STAMP"
+        }
+        EOF
+        cat /workspace/manifest.json
+
+  - id: publish-release
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        RELEASE=$$(cat /workspace/stamp.txt)-${BUILD_ID}
+        DEST=gs://${_ARTIFACTS_BUCKET}/releases/${COMMIT_SHA}/$$RELEASE
+        # objectCreator cannot overwrite, so each build publishes an immutable
+        # release rather than replacing an earlier one.
+        gcloud storage cp /workspace/frontend.tar.gz $$DEST/frontend.tar.gz
+        gcloud storage cp /workspace/manifest.json   $$DEST/manifest.json
+        echo "Release published: $$DEST"
+        echo "Tag this commit to deploy it."
+
+timeout: 1800s

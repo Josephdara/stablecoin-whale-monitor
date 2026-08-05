@@ -1,0 +1,145 @@
+
+serviceAccount: projects/${PROJECT_ID}/serviceAccounts/swm-cloud-build-cd@${PROJECT_ID}.iam.gserviceaccount.com
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _REGION: us-east4
+  _ARTIFACTS_BUCKET: swm-gcp-test-v2-build-artifacts
+  _FRONTEND_BUCKET: swm-gcp-test-v2-frontend
+  _API_SERVICE: swm-api-test
+  _ALERTER_SERVICE: swm-alerter-test
+  _INDEXER_POOL: swm-indexer-test
+  _PUBLIC_URL: https://swm.josephdara.com
+
+steps:
+  - id: fetch-release
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        # COMMIT_SHA is only populated for trigger-invoked builds. A manual
+        # gcloud builds submit would resolve an empty release path.
+        test -n "${COMMIT_SHA}" || { echo "COMMIT_SHA empty: run via the release-tag trigger" >&2; exit 1; }
+
+        PREFIX=gs://${_ARTIFACTS_BUCKET}/releases/${COMMIT_SHA}
+        # CI names each release <UTC timestamp>-<build id>, so lexicographic
+        # order is chronological. Sorting bare build UUIDs would not be.
+        LATEST=$$(gcloud storage ls $$PREFIX/ 2>/dev/null | sort | tail -1 || true)
+        test -n "$$LATEST" || { echo "No release published for ${COMMIT_SHA}" >&2; exit 1; }
+
+        echo "Deploying release $$LATEST"
+        gcloud storage cp $${LATEST}manifest.json   /workspace/manifest.json
+        gcloud storage cp $${LATEST}frontend.tar.gz /workspace/frontend.tar.gz
+
+  - id: verify-release
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        MANIFEST_SHA=$$(grep -o '"frontendSha256": *"[^"]*"' /workspace/manifest.json | cut -d'"' -f4)
+        ACTUAL_SHA=$$(sha256sum /workspace/frontend.tar.gz | cut -d' ' -f1)
+        test "$$MANIFEST_SHA" = "$$ACTUAL_SHA" || { echo "Frontend checksum mismatch" >&2; exit 1; }
+
+        MANIFEST_COMMIT=$$(grep -o '"commitSha": *"[^"]*"' /workspace/manifest.json | cut -d'"' -f4)
+        test "$$MANIFEST_COMMIT" = "${COMMIT_SHA}" || { echo "Manifest commit mismatch" >&2; exit 1; }
+
+        DIGEST=$$(grep -o '"imageDigest": *"[^"]*"' /workspace/manifest.json | cut -d'"' -f4)
+        case "$$DIGEST" in
+          *@sha256:*) ;;
+          *) echo "Manifest image is not digest-qualified: $$DIGEST" >&2; exit 1 ;;
+        esac
+        gcloud artifacts docker images describe "$$DIGEST" > /dev/null
+
+        echo "$$DIGEST" > /workspace/digest.txt
+        echo "Verified release $$DIGEST"
+
+  - id: deploy-api
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        gcloud run services update ${_API_SERVICE} --region=${_REGION} \
+          --image="$$(cat /workspace/digest.txt)" --quiet
+
+  - id: smoke-api
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        for i in $$(seq 1 10); do
+          if curl -fsS ${_PUBLIC_URL}/api/health | grep -q '"status":"ok"'; then
+            echo "API healthy after deploy"
+            exit 0
+          fi
+          echo "attempt $$i: not healthy yet"
+          sleep 10
+        done
+        echo "API did not become healthy after deploy" >&2
+        exit 1
+
+  - id: deploy-alerter
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        gcloud run services update ${_ALERTER_SERVICE} --region=${_REGION} \
+          --image="$$(cat /workspace/digest.txt)" --quiet
+
+
+  - id: deploy-indexer
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        gcloud components install beta --quiet
+        gcloud beta run worker-pools update ${_INDEXER_POOL} --region=${_REGION} \
+          --image="$$(cat /workspace/digest.txt)" --quiet
+
+  - id: deploy-frontend
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        mkdir -p /workspace/frontend
+        tar -xzf /workspace/frontend.tar.gz -C /workspace/frontend
+        gcloud storage rsync -r /workspace/frontend/out gs://${_FRONTEND_BUCKET} \
+          --delete-unmatched-destination-objects
+        gcloud storage objects update "gs://${_FRONTEND_BUCKET}/_next/static/**" \
+          --cache-control="public, max-age=31536000, immutable"
+        gcloud storage objects update "gs://${_FRONTEND_BUCKET}/**.html" "gs://${_FRONTEND_BUCKET}/**.txt" \
+          --cache-control="public, max-age=60"
+
+  - id: verify-deployment
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        DIGEST=$$(cat /workspace/digest.txt)
+        for svc in ${_API_SERVICE} ${_ALERTER_SERVICE}; do
+          RUNNING=$$(gcloud run services describe $$svc --region=${_REGION} \
+            --format='value(spec.template.spec.containers[0].image)')
+          test "$$RUNNING" = "$$DIGEST" || { echo "$$svc is running $$RUNNING, expected $$DIGEST" >&2; exit 1; }
+        done
+        curl -fsS -o /dev/null ${_PUBLIC_URL}/
+        curl -fsS ${_PUBLIC_URL}/api/health | grep -q '"chainId":1'
+        chmod +x infra/scripts/smoke-test.sh && infra/scripts/smoke-test.sh
+
+timeout: 1800s

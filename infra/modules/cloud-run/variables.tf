@@ -7,6 +7,8 @@ variable "region" {
   description = "Region for all three workloads."
   type        = string
 }
+# CD owns the deployed image; Terraform owns every other attribute. This is an ownership boundary, not drift suppression: 
+# it is what allows the deploy pipeline to update revisions without ever holding Terraform state access application_image is a bootstrap value only.
 
 variable "application_image" {
   description = "Digest-qualified image reference shared by all three workloads."

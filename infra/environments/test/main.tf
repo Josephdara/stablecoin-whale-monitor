@@ -217,3 +217,30 @@ module "monitoring" {
 
   indexer_worker_pool_name = module.cloud_run.indexer_worker_pool_name
 }
+
+module "cloud_build" {
+  source = "../../modules/cloud-build"
+
+  project_id = var.project_id
+  region     = var.region
+  location   = var.bucket_location
+  labels     = var.common_labels
+
+  verify_service_account_id = var.verify_service_account_id
+  ci_service_account_id     = var.ci_service_account_id
+  cd_service_account_id     = var.cd_service_account_id
+
+  artifacts_bucket_name  = "swm-gcp-test-v2-build-artifacts"
+  artifact_repository_id = google_artifact_registry_repository.app.repository_id
+  frontend_bucket_name   = module.storage.frontend_bucket_name
+
+  api_service_name         = module.cloud_run.api_service_name
+  alerter_service_name     = module.cloud_run.alerter_service_name
+  indexer_worker_pool_name = module.cloud_run.indexer_worker_pool_name
+
+  api_service_account_name     = module.iam.api_service_account_name
+  alerter_service_account_name = module.iam.alerter_service_account_name
+  indexer_service_account_name = module.iam.indexer_service_account_name
+
+  force_destroy = var.storage_force_destroy
+}
