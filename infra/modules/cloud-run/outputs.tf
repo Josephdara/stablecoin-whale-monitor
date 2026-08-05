@@ -13,6 +13,11 @@ output "alerter_service_name" {
   value       = google_cloud_run_v2_service.alerter.name
 }
 
+output "alerter_service_uri" {
+  description = "Direct run.app URL. Used by the smoke test to assert unauthenticated callers are rejected."
+  value       = google_cloud_run_v2_service.alerter.uri
+}
+
 output "alerter_push_endpoint" {
   description = "Push endpoint for the Pub/Sub subscription. Append the /pubsub path from src/alerter/server.mjs."
   value       = "${google_cloud_run_v2_service.alerter.uri}/pubsub"

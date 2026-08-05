@@ -90,3 +90,63 @@ variable "artifacts_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "name_prefix" {
+  description = "Prefix for trigger names."
+  type        = string
+}
+
+variable "connection_name" {
+  description = "Cloud Build 2nd-gen host connection."
+  type        = string
+  default     = "swm-test"
+}
+
+variable "repository_name" {
+  description = "Linked repository resource name. Cloud Build derives this from the remote URI — verify with 'gcloud builds repositories list'."
+  type        = string
+  default     = "Josephdara-stablecoin-whale-monitor"
+}
+
+variable "release_tag_pattern" {
+  description = "Tags that trigger a deploy."
+  type        = string
+  default     = "^release-test-.*$"
+}
+
+variable "public_url" {
+  description = "Public origin the CD smoke checks hit."
+  type        = string
+}
+
+# The four below exist so the CD trigger states every target the smoke script
+# needs. A substitution the trigger omits falls back to the YAML default, and
+# every default in cloudbuild-cd.yaml is a test value — a prod trigger missing
+# one would deploy prod and then smoke-test test, reporting green.
+
+variable "image_name" {
+  description = "Image name within the Artifact Registry repository. Stated on the CI trigger so it never resolves from the YAML default."
+  type        = string
+  default     = "stablecoin-whale-monitor"
+}
+
+variable "alerter_url" {
+  description = "Direct run.app URL of the alerter. The smoke test asserts it rejects unauthenticated callers."
+  type        = string
+}
+
+variable "events_bucket_name" {
+  description = "Events bucket. The smoke test asserts its lifecycle rule and public access prevention."
+  type        = string
+}
+
+variable "state_bucket_name" {
+  description = "Application-state bucket. The smoke test asserts it has no lifecycle rule."
+  type        = string
+}
+
+variable "terraform_state_bucket_name" {
+  description = "Remote-state bucket. Duplicated from backend.tf because backend blocks cannot reference variables. No pipeline identity has access to it; the smoke test only reads its lifecycle policy when run locally."
+  type        = string
+  default     = "swm-gcp-state-v2"
+}

@@ -70,10 +70,7 @@ output "pubsub_push_service_account_email" {
   value       = module.iam.pubsub_push_service_account_email
 }
 
-output "cloud_build_service_account_email" {
-  description = "Cloud Build deployer identity."
-  value       = module.iam.cloud_build_service_account_email
-}
+
 
 output "rpc_secret_id" {
   description = "RPC secret container. A version must be added manually before Cloud Run deploys."

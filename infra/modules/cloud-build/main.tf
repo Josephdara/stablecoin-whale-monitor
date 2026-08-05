@@ -135,3 +135,87 @@ resource "google_service_account_iam_member" "cd_act_as" {
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.cd.email}"
 }
+
+# Triggers.
+
+
+locals {
+  repository = "projects/${var.project_id}/locations/${var.region}/connections/${var.connection_name}/repositories/${var.repository_name}"
+}
+
+resource "google_cloudbuild_trigger" "verify" {
+  project         = var.project_id
+  location        = var.region
+  name            = "${var.name_prefix}-verify"
+  description     = "PR verification. Tests, typecheck, fmt, validate. Mutates nothing."
+  filename        = "cloudbuild/cloudbuild-verify.yaml"
+  service_account = google_service_account.verify.id
+
+  repository_event_config {
+    repository = local.repository
+    pull_request {
+      branch          = "^main$"
+      comment_control = "COMMENTS_ENABLED_FOR_EXTERNAL_CONTRIBUTORS_ONLY"
+    }
+  }
+}
+
+resource "google_cloudbuild_trigger" "ci" {
+  project         = var.project_id
+  location        = var.region
+  name            = "${var.name_prefix}-ci"
+  description     = "Build and publish an immutable release for the pushed commit."
+  filename        = "cloudbuild/cloudbuild-ci.yaml"
+  service_account = google_service_account.ci.id
+
+  repository_event_config {
+    repository = local.repository
+    push {
+      branch = "^main$"
+    }
+  }
+
+  substitutions = {
+    _REGION           = var.region
+    _REPO             = var.artifact_repository_id
+    _IMAGE_NAME       = var.image_name
+    _ARTIFACTS_BUCKET = google_storage_bucket.artifacts.name
+  }
+}
+
+resource "google_cloudbuild_trigger" "cd" {
+  project         = var.project_id
+  location        = var.region
+  name            = "${var.name_prefix}-cd"
+  description     = "Deploy a previously published release. No build, no Terraform, no state."
+  filename        = "cloudbuild/cloudbuild-cd.yaml"
+  service_account = google_service_account.cd.id
+
+  repository_event_config {
+    repository = local.repository
+    push {
+      tag = var.release_tag_pattern
+    }
+  }
+
+  approval_config {
+    approval_required = true
+  }
+
+  # Every environment-specific value the pipeline touches must be stated here.
+  # A key omitted from this map resolves to the YAML default instead, and those
+  # defaults are all test values.
+  substitutions = {
+    _REGION           = var.region
+    _ARTIFACTS_BUCKET = google_storage_bucket.artifacts.name
+    _FRONTEND_BUCKET  = var.frontend_bucket_name
+    _API_SERVICE      = var.api_service_name
+    _ALERTER_SERVICE  = var.alerter_service_name
+    _INDEXER_POOL     = var.indexer_worker_pool_name
+    _PUBLIC_URL       = var.public_url
+    _ALERTER_URL      = var.alerter_url
+    _EVENTS_BUCKET    = var.events_bucket_name
+    _STATE_BUCKET     = var.state_bucket_name
+    _TF_STATE_BUCKET  = var.terraform_state_bucket_name
+  }
+}

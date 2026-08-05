@@ -27,13 +27,6 @@ variable "region" {
   }
 }
 
-variable "zone" {
-  description = "Default zone for any zonal resources."
-  type        = string
-  default     = "us-east4-a"
-
-
-}
 
 variable "name_prefix" {
   description = "Prefix used to create predictable environment-specific resource names."
@@ -103,11 +96,7 @@ variable "storage_force_destroy" {
   default     = true
 }
 
-variable "enable_event_lifecycle" {
-  description = "Enables the prefix-scoped seven-day deletion rule on the events bucket after API verification."
-  type        = bool
-  default     = false
-}
+
 
 variable "event_retention_days" {
   description = "Visible API retention and eventual event-object lifecycle age in days."
@@ -159,11 +148,6 @@ variable "pubsub_push_service_account_id" {
   default     = "swm-test-pubsub-push"
 }
 
-variable "cloud_build_service_account_id" {
-  description = "Account ID for the Cloud Build deployment service account."
-  type        = string
-  default     = "swm-test-cloud-build"
-}
 
 variable "rpc_secret_id" {
   description = "Secret Manager secret ID containing the Google Blockchain RPC URL."
@@ -531,11 +515,6 @@ variable "api_rate_limit_interval_seconds" {
   default     = 60
 }
 
-variable "terraform_state_bucket_name" {
-  description = "Remote-state bucket, created by bootstrap outside this state. Must match backend.tf."
-  type        = string
-  default     = "swm-gcp-state-v2"
-}
 
 variable "verify_service_account_id" {
   description = "Account ID for the PR verification identity. Environment-neutral: service accounts are project-scoped."

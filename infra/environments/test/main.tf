@@ -47,9 +47,9 @@ module "storage" {
   labels               = var.common_labels
   force_destroy        = var.storage_force_destroy
 
-  enable_event_lifecycle = var.enable_event_lifecycle
-  event_retention_days   = var.event_retention_days
-  event_object_prefix    = var.event_object_prefix
+
+  event_retention_days = var.event_retention_days
+  event_object_prefix  = var.event_object_prefix
 
   depends_on = [module.project-services]
 }
@@ -70,22 +70,19 @@ module "iam" {
   source = "../../modules/iam"
 
   project_id = var.project_id
-  region     = var.region
+
 
   api_service_account_id         = var.api_service_account_id
   indexer_service_account_id     = var.indexer_service_account_id
   alerter_service_account_id     = var.alerter_service_account_id
   pubsub_push_service_account_id = var.pubsub_push_service_account_id
-  cloud_build_service_account_id = var.cloud_build_service_account_id
 
-  frontend_bucket_name = module.storage.frontend_bucket_name
-  events_bucket_name   = module.storage.events_bucket_name
-  state_bucket_name    = module.storage.state_bucket_name
-  rpc_secret_id        = module.secrets.rpc_secret_id
-  gmail_secret_id      = module.secrets.gmail_secret_id
 
-  terraform_state_bucket_name = var.terraform_state_bucket_name
-  artifact_repository_id      = google_artifact_registry_repository.app.repository_id
+  events_bucket_name = module.storage.events_bucket_name
+  state_bucket_name  = module.storage.state_bucket_name
+  rpc_secret_id      = module.secrets.rpc_secret_id
+  gmail_secret_id    = module.secrets.gmail_secret_id
+
 
   depends_on = [module.secrets]
 }
@@ -241,6 +238,12 @@ module "cloud_build" {
   api_service_account_name     = module.iam.api_service_account_name
   alerter_service_account_name = module.iam.alerter_service_account_name
   indexer_service_account_name = module.iam.indexer_service_account_name
+  name_prefix                  = var.name_prefix
+  public_url                   = "https://${var.domain_name}"
+
+  alerter_url        = module.cloud_run.alerter_service_uri
+  events_bucket_name = module.storage.events_bucket_name
+  state_bucket_name  = module.storage.state_bucket_name
 
   force_destroy = var.storage_force_destroy
 }

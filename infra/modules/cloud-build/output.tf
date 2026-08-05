@@ -17,3 +17,12 @@ output "artifacts_bucket_name" {
   description = "Release archive and manifest location; substituted into the CI and CD pipelines."
   value       = google_storage_bucket.artifacts.name
 }
+
+output "trigger_names" {
+  description = "Verify, CI, and CD triggers. Confirm each reports its intended identity."
+  value = {
+    verify = google_cloudbuild_trigger.verify.name
+    ci     = google_cloudbuild_trigger.ci.name
+    cd     = google_cloudbuild_trigger.cd.name
+  }
+}

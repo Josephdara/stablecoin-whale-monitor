@@ -28,12 +28,6 @@ resource "google_service_account" "pubsub_push" {
   description  = "Mints OIDC tokens to invoke the private alerter. Invoker binding is created with the Cloud Run service."
 }
 
-resource "google_service_account" "cloud_build" {
-  project      = var.project_id
-  account_id   = var.cloud_build_service_account_id
-  display_name = "SWM Cloud Build deployer"
-  description  = "Publishes images, uploads the frontend, and reads/writes Terraform state."
-}
 
 # Indexer as objectCreator for Events bucket
 resource "google_storage_bucket_iam_member" "indexer_events_creator" {
@@ -90,37 +84,4 @@ resource "google_secret_manager_secret_iam_member" "alerter_gmail" {
   member    = "serviceAccount:${google_service_account.alerter.email}"
 }
 
-# Cloud Build Artifact Registry writer
-resource "google_artifact_registry_repository_iam_member" "build_writer" {
-  project    = var.project_id
-  location   = var.region
-  repository = var.artifact_repository_id
-  role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:${google_service_account.cloud_build.email}"
-}
-# Cloud Build frontend object user; 
-resource "google_storage_bucket_iam_member" "build_frontend" {
-  bucket = var.frontend_bucket_name
-  role   = "roles/storage.objectUser"
-  member = "serviceAccount:${google_service_account.cloud_build.email}"
-}
-# Cloud Build Terraform-state object admin
-resource "google_storage_bucket_iam_member" "build_terraform_state" {
-  bucket = var.terraform_state_bucket_name
-  role   = "roles/storage.objectUser"
-  member = "serviceAccount:${google_service_account.cloud_build.email}"
-}
 
-# Cloud Build actAs for service accounts for scoped access
-resource "google_service_account_iam_member" "build_act_as" {
-  for_each = {
-    api         = google_service_account.api.name
-    indexer     = google_service_account.indexer.name
-    alerter     = google_service_account.alerter.name
-    pubsub_push = google_service_account.pubsub_push.name
-  }
-
-  service_account_id = each.value
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.cloud_build.email}"
-}

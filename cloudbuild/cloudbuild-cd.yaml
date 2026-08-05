@@ -12,6 +12,10 @@ substitutions:
   _ALERTER_SERVICE: swm-alerter-test
   _INDEXER_POOL: swm-indexer-test
   _PUBLIC_URL: https://swm.josephdara.com
+  _ALERTER_URL: https://swm-alerter-test-pkklwzsqha-uk.a.run.app
+  _EVENTS_BUCKET: swm-gcp-test-v2-events
+  _STATE_BUCKET: swm-gcp-test-v2-app-state
+  _TF_STATE_BUCKET: swm-gcp-state-v2
 
 steps:
   - id: fetch-release
@@ -138,8 +142,25 @@ steps:
             --format='value(spec.template.spec.containers[0].image)')
           test "$$RUNNING" = "$$DIGEST" || { echo "$$svc is running $$RUNNING, expected $$DIGEST" >&2; exit 1; }
         done
+        POOL_IMAGE=$$(curl -sS -H "Authorization: Bearer $$(gcloud auth print-access-token)" \
+          "https://${_REGION}-run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${_REGION}/workerPools/${_INDEXER_POOL}" \
+          | grep -o '"image": *"[^"]*"' | head -1 | cut -d'"' -f4)
+        test "$$POOL_IMAGE" = "$$DIGEST" || {
+          echo "${_INDEXER_POOL} is running $$POOL_IMAGE, expected $$DIGEST" >&2; exit 1; }
+        echo "indexer worker pool on $$DIGEST"
         curl -fsS -o /dev/null ${_PUBLIC_URL}/
         curl -fsS ${_PUBLIC_URL}/api/health | grep -q '"chainId":1'
-        chmod +x infra/scripts/smoke-test.sh && infra/scripts/smoke-test.sh
+
+        # Pass the trigger's targets explicitly. Invoked bare, the script falls
+        # back to its own hardcoded test defaults, so a prod deploy would smoke
+        # test the test estate and report green.
+        chmod +x infra/scripts/smoke-test.sh
+        PUBLIC_URL="${_PUBLIC_URL}" \
+        ALERTER_URL="${_ALERTER_URL}" \
+        PROJECT_ID="${PROJECT_ID}" \
+        EVENTS_BUCKET="${_EVENTS_BUCKET}" \
+        STATE_BUCKET="${_STATE_BUCKET}" \
+        TF_STATE_BUCKET="${_TF_STATE_BUCKET}" \
+          infra/scripts/smoke-test.sh
 
 timeout: 1800s

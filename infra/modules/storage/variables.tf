@@ -34,11 +34,7 @@ variable "force_destroy" {
   type        = bool
 }
 
-variable "enable_event_lifecycle" {
-  description = "Enables the prefix-scoped deletion rule on the events bucket. Phase 12 only."
-  type        = bool
-  default     = false
-}
+
 
 variable "event_retention_days" {
   description = "Maximum days for events in events_bucket storage."

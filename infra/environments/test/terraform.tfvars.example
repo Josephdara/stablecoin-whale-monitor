@@ -18,7 +18,6 @@ events_bucket_name     = "replace-with-unique-events-bucket"
 state_bucket_name      = "replace-with-unique-app-state-bucket"
 bucket_location        = "US-EAST4"
 storage_force_destroy  = true
-enable_event_lifecycle = false
 event_retention_days   = 7
 
 api_service_name               = "swm-api-test"
@@ -28,7 +27,6 @@ api_service_account_id         = "swm-test-api"
 indexer_service_account_id     = "swm-test-indexer"
 alerter_service_account_id     = "swm-test-alerter"
 pubsub_push_service_account_id = "swm-test-pubsub-push"
-cloud_build_service_account_id = "swm-test-cloud-build"
 
 chain_id                = 1
 start_block             = 25638000
