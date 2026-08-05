@@ -20,7 +20,7 @@ resource "google_cloud_run_v2_worker_pool" "indexer" {
 
     containers {
       image = var.application_image
-      args  = ["scripts/fetch-usdc-logs.mjs"] 
+      args  = ["scripts/fetch-usdc-logs.mjs"]
 
       dynamic "env" {
         for_each = merge(local.storage_env, {
@@ -97,9 +97,9 @@ resource "google_cloud_run_v2_service" "alerter" {
   labels              = var.labels
 
   scaling {
-      min_instance_count = var.alerter_min_instances
-      max_instance_count = var.alerter_max_instances
-    }
+    min_instance_count = var.alerter_min_instances
+    max_instance_count = var.alerter_max_instances
+  }
 
   template {
     service_account = var.alerter_service_account_email
@@ -118,7 +118,7 @@ resource "google_cloud_run_v2_service" "alerter" {
         container_port = 8080
       }
 
-        dynamic "env" {
+      dynamic "env" {
         for_each = {
           GCS_EVENTS_BUCKET = var.events_bucket_name
           API_HOST          = "0.0.0.0"
@@ -152,7 +152,8 @@ resource "google_cloud_run_v2_service" "alerter" {
       }
 
       resources {
-        limits = { cpu = var.alerter_cpu, memory = var.alerter_memory }
+        limits   = { cpu = var.alerter_cpu, memory = var.alerter_memory }
+        cpu_idle = true
       }
     }
   }
@@ -176,10 +177,10 @@ resource "google_cloud_run_v2_service" "api" {
   deletion_protection = false
   labels              = var.labels
 
-      scaling {
-      min_instance_count = var.api_min_instances
-      max_instance_count = var.api_max_instances
-    }
+  scaling {
+    min_instance_count = var.api_min_instances
+    max_instance_count = var.api_max_instances
+  }
 
   template {
     service_account                  = var.api_service_account_email

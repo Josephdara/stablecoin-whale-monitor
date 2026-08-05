@@ -5,11 +5,11 @@ variable "project_id" {
 
 
 variable "rpc_secret_id" {
-    type = string
+  type = string
 }
 
 variable "gmail_secret_id" {
-    type = string
+  type = string
 }
 
 variable "labels" {

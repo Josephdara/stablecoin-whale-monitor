@@ -200,3 +200,20 @@ module "edge" {
   api_rate_limit_requests         = var.api_rate_limit_requests
   api_rate_limit_interval_seconds = var.api_rate_limit_interval_seconds
 }
+
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  project_id     = var.project_id
+  environment    = var.environment
+  domain_name    = var.domain_name
+  alert_email_to = var.alert_email_from
+
+  url_map_name             = module.edge.url_map_name
+  api_backend_service_name = module.edge.api_backend_service_name
+
+  dead_letter_subscription_name = module.pubsub.dead_letter_subscription_name
+  alert_subscription_name       = module.pubsub.alert_subscription_name
+
+  indexer_worker_pool_name = module.cloud_run.indexer_worker_pool_name
+}

@@ -1,1 +1,69 @@
+variable "project_id" {
+  description = "Project that owns the alert policies, uptime check, and log metric."
+  type        = string
+}
 
+variable "environment" {
+  description = "Environment name, used in display names and the log metric name."
+  type        = string
+}
+
+variable "domain_name" {
+  description = "Hostname probed by the uptime check."
+  type        = string
+}
+
+variable "alert_email_to" {
+  description = "Recipient for every alert policy. Google sends a verification email before delivery works."
+  type        = string
+  sensitive   = true
+}
+
+variable "url_map_name" {
+  description = "Scopes load balancer metrics to this estate. Pass the edge module output."
+  type        = string
+}
+
+variable "api_backend_service_name" {
+  description = "Scopes load balancer metrics to the API rather than the frontend backend buckets."
+  type        = string
+}
+
+variable "dead_letter_subscription_name" {
+  description = "DLQ inspection subscription. Pass the pubsub module output."
+  type        = string
+}
+
+variable "alert_subscription_name" {
+  description = "Push subscription whose backlog age is monitored."
+  type        = string
+}
+
+variable "indexer_worker_pool_name" {
+  description = "Worker Pool name, used by both indexer policies and the log metric filter."
+  type        = string
+}
+
+variable "api_5xx_rate_threshold" {
+  description = "5xx requests/second over a 5-minute window. 0.01 is about 3 errors per 5 minutes."
+  type        = number
+  default     = 0.01
+}
+
+variable "api_latency_threshold_ms" {
+  description = "p99 request latency in milliseconds that triggers an alert."
+  type        = number
+  default     = 2000
+}
+
+variable "push_backlog_age_threshold_seconds" {
+  description = "Oldest unacked message age indicating the alerter is not keeping up. A number, not a duration string."
+  type        = number
+  default     = 600
+}
+
+variable "indexer_stall_duration_seconds" {
+  description = "Duration string, e.g. 900s. How long cycle logs may be absent before alerting."
+  type        = string
+  default     = "900s"
+}
