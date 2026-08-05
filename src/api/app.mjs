@@ -8,9 +8,36 @@ export class EventIndex {
     this.retentionDays = retentionDays;
     this.events = [];
     this.eventObjectNames = new Set();
+    this.highestObjectName = null;
     this.refreshedAt = null;
     this.lastError = null;
     this.refreshPromise = null;
+    this.refreshTimer = null;
+  }
+
+  // Refreshes on a timer instead of on the request path. Requires CPU to stay
+  // allocated between requests (cpu_idle = false on the Cloud Run service),
+  // which is how the API is deployed.
+  startBackgroundRefresh(intervalMs) {
+    if (this.refreshTimer || !intervalMs) return;
+    this.refreshTimer = setInterval(() => {
+      this.refresh().catch((error) => {
+        console.error(JSON.stringify({
+          level: "error",
+          component: "api",
+          event: "background_refresh_failed",
+          message: error instanceof Error ? error.message : String(error),
+        }));
+      });
+    }, intervalMs);
+    this.refreshTimer.unref?.();
+  }
+
+  stopBackgroundRefresh() {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
+    }
   }
 
   refresh() {
@@ -29,6 +56,7 @@ export class EventIndex {
         const objectNames = [];
         for await (const { name, event } of this.storage.iterateEvents({
           knownNames: this.eventObjectNames,
+          startOffset: this.highestObjectName ?? undefined,
         })) {
           validateEvent(event, this.chainId);
           additions.push(event);
@@ -37,7 +65,12 @@ export class EventIndex {
         if (additions.length) {
           const combined = this.events.length ? [...this.events, ...additions] : additions;
           this.events = deduplicate(combined).sort(compareNewestFirst);
-          for (const name of objectNames) this.eventObjectNames.add(name);
+          for (const name of objectNames) {
+            this.eventObjectNames.add(name);
+            if (this.highestObjectName === null || name > this.highestObjectName) {
+              this.highestObjectName = name;
+            }
+          }
         }
       } else {
         const events = await this.storage.listEvents();
@@ -172,13 +205,22 @@ export function createApiApp({ config, storage, index }) {
         refreshError = error instanceof Error ? error.message : String(error);
       }
       index.prune();
-      const checkpointState = await storage.readCheckpoint();
+
+      let checkpointState = null;
+      let checkpointError = null;
+      try {
+        checkpointState = await storage.readCheckpoint();
+      } catch (error) {
+        checkpointError = error instanceof Error ? error.message : String(error);
+      }
       const checkpoint = checkpointState?.value ?? null;
       const checkpointAgeSeconds = checkpoint
         ? Math.max(0, Math.floor((Date.now() - Date.parse(checkpoint.updatedAt)) / 1000))
         : null;
+
+      const maxStaleMs = config.maxStaleMs ?? config.refreshMs;
       const indexError = index.lastError ??
-        (index.isStale(config.refreshMs) ? refreshError : null);
+        (index.refreshedAt === null || index.isStale(maxStaleMs) ? refreshError : null);
       response.status(indexError ? 503 : 200).json({
         status: indexError ? "degraded" : "ok",
         chainId: config.chainId,
@@ -189,6 +231,7 @@ export function createApiApp({ config, storage, index }) {
         indexedEvents: index.events.length,
         indexRefreshedAt: index.refreshedAt,
         indexError,
+        checkpointError,
       });
     } catch (error) {
       next(error);
@@ -316,6 +359,11 @@ async function requireFreshIndex(index, config) {
   try {
     await index.ensureFresh(config.refreshMs, config.refreshDeadlineMs);
   } catch {
-    throw serviceUnavailable("Event index could not be refreshed");
+    // A missed deadline is not an outage. The in-memory index is still loaded
+    // and typically only seconds stale, so serve it and fail only when it is
+    // genuinely unusable: never loaded, or older than maxStaleMs.
+    if (index.refreshedAt === null || index.isStale(config.maxStaleMs ?? config.refreshMs)) {
+      throw serviceUnavailable("Event index could not be refreshed");
+    }
   }
 }

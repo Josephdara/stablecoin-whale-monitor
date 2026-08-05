@@ -45,9 +45,9 @@ variable "indexer_worker_pool_name" {
 }
 
 variable "api_5xx_rate_threshold" {
-  description = "5xx requests/second over a 5-minute window. 0.01 is about 3 errors per 5 minutes."
+  description = "5xx requests/second over the alert's 30-minute window. 0.001 is about 2 errors per 30 minutes. The previous 0.01 was 27x above the observed failure rate of 32 errors/day and never fired."
   type        = number
-  default     = 0.01
+  default     = 0.001
 }
 
 variable "api_latency_threshold_ms" {

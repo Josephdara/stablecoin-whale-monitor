@@ -74,6 +74,7 @@ export function loadApiConfig(env = process.env) {
     host: env.API_HOST?.trim() || "127.0.0.1",
     refreshMs: integer(env, "API_REFRESH_MS", { min: 1_000, max: 3_600_000 }),
     refreshDeadlineMs: optionalInteger(env, "API_REFRESH_DEADLINE_MS", 5_000, { min: 100, max: 60_000 }),
+    maxStaleMs: optionalInteger(env, "API_MAX_STALE_MS", 600_000, { min: 1_000, max: 86_400_000 }),
     maxPageSize: integer(env, "API_MAX_PAGE_SIZE", { min: 1, max: 200 }),
     allowedOrigin: env.API_ALLOWED_ORIGIN?.trim() || "",
     chainId: integer(env, "CHAIN_ID", { min: 1, max: 2 ** 31 - 1 }),

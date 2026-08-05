@@ -114,6 +114,21 @@ resource "google_cloud_run_v2_service_iam_member" "cd_services" {
   member   = "serviceAccount:${google_service_account.cd.email}"
 }
 
+
+resource "google_project_iam_custom_role" "run_operations_reader" {
+  project     = var.project_id
+  role_id     = "swmRunOperationsReader"
+  title       = "SWM Cloud Run operations reader"
+  description = "Read Cloud Run long-running operations. Required to poll a worker pool update to completion."
+  permissions = ["run.operations.get"]
+}
+
+resource "google_project_iam_member" "cd_run_operations" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.run_operations_reader.id
+  member  = "serviceAccount:${google_service_account.cd.email}"
+}
+
 resource "google_cloud_run_v2_worker_pool_iam_member" "cd_indexer" {
   provider = google-beta
 

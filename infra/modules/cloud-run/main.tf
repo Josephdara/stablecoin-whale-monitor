@@ -76,7 +76,11 @@ resource "google_cloud_run_v2_worker_pool" "indexer" {
   # it is what allows the deploy pipeline to update revisions without ever holding Terraform state access application_image is a bootstrap value only.
 
   lifecycle {
-    ignore_changes = [template[0].containers[0].image]
+    ignore_changes = [
+      template[0].containers[0].image,
+      client,
+      client_version,
+    ]
   }
 
 }
@@ -168,7 +172,13 @@ resource "google_cloud_run_v2_service" "alerter" {
   # it is what allows the deploy pipeline to update revisions without ever holding Terraform state access application_image is a bootstrap value only.
 
   lifecycle {
-    ignore_changes = [template[0].containers[0].image]
+    ignore_changes = [
+      template[0].containers[0].image,
+      # gcloud stamps these on every deploy. Without them here, each CD run
+      # leaves a permanent diff and the empty-plan signal is lost.
+      client,
+      client_version,
+    ]
   }
 
 }
@@ -248,7 +258,13 @@ resource "google_cloud_run_v2_service" "api" {
   # CD owns the deployed image; Terraform owns every other attribute. This is an ownership boundary, not drift suppression: 
   # it is what allows the deploy pipeline to update revisions without ever holding Terraform state access application_image is a bootstrap value only.
   lifecycle {
-    ignore_changes = [template[0].containers[0].image]
+    ignore_changes = [
+      template[0].containers[0].image,
+      # gcloud stamps these on every deploy. Without them here, each CD run
+      # leaves a permanent diff and the empty-plan signal is lost.
+      client,
+      client_version,
+    ]
   }
 
 }

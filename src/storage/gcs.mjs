@@ -69,13 +69,15 @@ export class GcsStorageAdapter {
     });
   }
 
-  async *iterateEvents({ knownNames = new Set() } = {}) {
+  
+  async *iterateEvents({ knownNames = new Set(), startOffset } = {}) {
     let pageToken;
     do {
       const [files, nextQuery] = await this.eventsBucket.getFiles({
         prefix: "ethereum/",
         autoPaginate: false,
         maxResults: 1_000,
+        ...(startOffset ? { startOffset } : {}),
         ...(pageToken ? { pageToken } : {}),
       });
       const wanted = files.filter(

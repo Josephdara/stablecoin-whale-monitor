@@ -80,10 +80,11 @@ resource "google_monitoring_alert_policy" "api_5xx" {
 
 
       threshold_value = var.api_5xx_rate_threshold
-      duration        = "300s"
+
+      duration = "1800s"
 
       aggregations {
-        alignment_period   = "300s"
+        alignment_period   = "1800s"
         per_series_aligner = "ALIGN_RATE"
       }
     }
