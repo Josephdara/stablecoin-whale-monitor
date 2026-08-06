@@ -268,8 +268,15 @@ resource "google_monitoring_alert_policy" "indexer_stalled" {
       evaluation_missing_data = "EVALUATION_MISSING_DATA_ACTIVE"
 
       aggregations {
-        alignment_period   = "300s"
-        per_series_aligner = "ALIGN_SUM"
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+
+        group_by_fields = [
+          "resource.label.project_id",
+          "resource.label.location",
+          "resource.label.worker_pool_name",
+        ]
       }
     }
   }
