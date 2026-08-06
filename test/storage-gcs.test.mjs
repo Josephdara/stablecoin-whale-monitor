@@ -107,3 +107,28 @@ test("GCS event iteration is paginated, skips known names, and reads both single
     "ethereum/ranges/000000000100-000000000199.json",
   ]);
 });
+
+test("GCS event iteration forwards the lexicographic start offset", async () => {
+  const queries = [];
+  const eventsBucket = {
+    getFiles: async (query) => {
+      queries.push(query);
+      return [[], null];
+    },
+  };
+  const storageClient = {
+    bucket: (name) => name === "events" ? eventsBucket : {},
+  };
+  const adapter = new GcsStorageAdapter(
+    { gcsEventsBucket: "events", gcsStateBucket: "state" },
+    storageClient,
+  );
+  const startOffset = "ethereum/ranges/000000000100-000000000199.json";
+
+  for await (const _entry of adapter.iterateEvents({ startOffset })) {
+    assert.fail("empty listing should not yield an event");
+  }
+
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0].startOffset, startOffset);
+});

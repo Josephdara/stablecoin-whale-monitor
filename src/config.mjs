@@ -68,7 +68,7 @@ export function loadIndexerConfig(env = process.env) {
 }
 
 export function loadApiConfig(env = process.env) {
-  return {
+  const config = {
     ...loadStorageConfig(env),
     port: integer(env, "API_PORT", { min: 1, max: 65_535 }),
     host: env.API_HOST?.trim() || "127.0.0.1",
@@ -80,6 +80,10 @@ export function loadApiConfig(env = process.env) {
     chainId: integer(env, "CHAIN_ID", { min: 1, max: 2 ** 31 - 1 }),
     retentionDays: integer(env, "RETENTION_DAYS", { min: 1, max: 365 }),
   };
+  if (config.maxStaleMs < config.refreshMs) {
+    throw new Error("API_MAX_STALE_MS cannot be less than API_REFRESH_MS");
+  }
+  return config;
 }
 
 export function loadAlerterConfig(env = process.env) {

@@ -65,7 +65,7 @@ variable "api_service_account_email" {
 }
 
 variable "api_min_instances" {
-  description = "Zero preserves request-based scale-to-zero billing."
+  description = "Minimum API instances. Use at least one when background refresh cadence must continue without requests."
   type        = number
 }
 
@@ -91,6 +91,11 @@ variable "api_refresh_ms" {
 
 variable "api_refresh_deadline_ms" {
   description = "Maximum time a request waits for a required storage refresh."
+  type        = number
+}
+
+variable "api_max_stale_ms" {
+  description = "Maximum age at which the API may serve its cached index after a refresh failure."
   type        = number
 }
 

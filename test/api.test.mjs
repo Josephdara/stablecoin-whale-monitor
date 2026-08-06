@@ -55,12 +55,14 @@ test("event index coalesces concurrent refreshes", async () => {
 test("event index downloads only newly discovered immutable event objects", async () => {
   const config = testConfig();
   const entries = [
-    { name: "ethereum/one.json", event: makeEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }) },
-    { name: "ethereum/two.json", event: makeEvent(config, { token: "USDT", blockNumber: 101, logIndex: 0, transaction: 2 }) },
+    { name: "ethereum/ranges/000000000100-000000000100.json", event: makeEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }) },
+    { name: "ethereum/ranges/000000000101-000000000101.json", event: makeEvent(config, { token: "USDT", blockNumber: 101, logIndex: 0, transaction: 2 }) },
   ];
   let yielded = 0;
+  const startOffsets = [];
   const storage = {
-    async *iterateEvents({ knownNames }) {
+    async *iterateEvents({ knownNames, startOffset }) {
+      startOffsets.push(startOffset);
       for (const entry of entries) {
         if (knownNames.has(entry.name)) continue;
         yielded += 1;
@@ -75,11 +77,17 @@ test("event index downloads only newly discovered immutable event objects", asyn
   assert.equal(index.events.length, 2);
 
   entries.push({
-    name: "ethereum/three.json",
+    name: "ethereum/ranges/000000000102-000000000102.json",
     event: makeEvent(config, { token: "USDC", blockNumber: 102, logIndex: 0, transaction: 3 }),
   });
   await index.refresh();
   assert.equal(yielded, 3);
+  assert.deepEqual(startOffsets, [
+    undefined,
+    "ethereum/ranges/000000000101-000000000101.json",
+    "ethereum/ranges/000000000101-000000000101.json",
+  ]);
+  assert.equal(index.highestObjectName, "ethereum/ranges/000000000102-000000000102.json");
   assert.deepEqual(index.events.map((event) => event.blockNumber), [102, 101, 100]);
 });
 
@@ -293,6 +301,29 @@ test("a startup refresh and request freshness check share one storage sweep", as
   assert.equal(calls, 1);
 });
 
+test("background refresh starts once and stops cleanly", async () => {
+  let calls = 0;
+  const index = new EventIndex({
+    listEvents: async () => {
+      calls += 1;
+      return [];
+    },
+  });
+
+  index.startBackgroundRefresh(5);
+  const timer = index.refreshTimer;
+  index.startBackgroundRefresh(5);
+  assert.equal(index.refreshTimer, timer);
+
+  await waitFor(() => calls >= 2);
+  index.stopBackgroundRefresh();
+  assert.equal(index.refreshTimer, null);
+
+  const callsAtStop = calls;
+  await delay(20);
+  assert.equal(calls, callsAtStop);
+});
+
 test("staleness includes an invalid timestamp and the exact maximum-age boundary", () => {
   const index = new EventIndex({});
   assert.equal(index.isStale(30_000, 100_000), true);
@@ -305,7 +336,7 @@ test("staleness includes an invalid timestamp and the exact maximum-age boundary
   assert.equal(index.isStale(30_000, 100_000), true);
 });
 
-test("a failed required refresh returns 503 and reports degraded health", async () => {
+test("a failed refresh serves a warm index and reports degraded health", async () => {
   const config = testConfig();
   const events = [agedEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }, 3_600_000)];
   let calls = 0;
@@ -323,15 +354,16 @@ test("a failed required refresh returns 503 and reports degraded health", async 
 
   await withApi({ config: apiConfig(), storage, index }, async (request) => {
     const transfers = await request("/api/transfers");
-    assert.equal(transfers.status, 503);
-    assert.equal((await transfers.json()).error, "Event index could not be refreshed");
+    assert.equal(transfers.status, 200);
+    assert.equal((await transfers.json()).total, 1);
 
     const health = await request("/api/health");
-    assert.equal(health.status, 503);
+    assert.equal(health.status, 200);
     const body = await health.json();
     assert.equal(body.status, "degraded");
     assert.equal(body.indexedEvents, 1);
-    assert.match(body.indexError, /unreachable/);
+    assert.equal(body.indexError, null);
+    assert.match(body.lastRefreshError, /unreachable/);
   });
 });
 
@@ -353,7 +385,7 @@ test("a never-loaded index that cannot reach storage returns 503 without leaking
   });
 });
 
-test("a slow refresh on a warm index returns 503 at the deadline", async () => {
+test("a slow refresh on a warm index serves cached data at the deadline", async () => {
   const config = testConfig();
   const events = [agedEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }, 3_600_000)];
   let calls = 0;
@@ -371,9 +403,34 @@ test("a slow refresh on a warm index returns 503 at the deadline", async () => {
 
   await withApi({ config: apiConfig({ refreshDeadlineMs: 100 }), storage, index }, async (request) => {
     const response = await request("/api/transfers");
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).total, 1);
+    assert.equal(calls, 2);
+    release();
+    await index.refreshPromise;
+  });
+});
+
+test("a refresh deadline returns 503 after the cached index exceeds maxStaleMs", async () => {
+  const config = testConfig();
+  const events = [agedEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }, 3_600_000)];
+  let release = () => {};
+  let calls = 0;
+  const storage = {
+    listEvents: async () => {
+      calls += 1;
+      if (calls > 1) await new Promise((resolve) => { release = resolve; });
+      return events;
+    },
+  };
+  const index = new EventIndex(storage, 1, 7);
+  await index.refresh();
+  index.refreshedAt = new Date(Date.now() - 700_000).toISOString();
+
+  await withApi({ config: apiConfig({ refreshDeadlineMs: 100 }), storage, index }, async (request) => {
+    const response = await request("/api/transfers");
     assert.equal(response.status, 503);
     assert.equal((await response.json()).error, "Event index could not be refreshed");
-    assert.equal(calls, 2);
     release();
     await index.refreshPromise;
   });
@@ -450,7 +507,42 @@ test("transaction lookup and health refresh stale indexes on their request paths
   });
 });
 
-test("api configuration accepts an optional refresh deadline", () => {
+test("checkpoint read failures return degraded health without invalidating the index", async () => {
+  const config = testConfig();
+  const event = agedEvent(
+    config,
+    { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 },
+    3_600_000,
+  );
+  const storage = {
+    listEvents: async () => [event],
+    readCheckpoint: async () => { throw new Error("checkpoint bucket unavailable"); },
+  };
+  const index = new EventIndex(storage, 1, 7);
+  const logs = [];
+  await index.refresh();
+
+  await withApi({
+    config: apiConfig(),
+    storage,
+    index,
+    logger: (line) => logs.push(JSON.parse(line)),
+  }, async (request) => {
+    const health = await request("/api/health");
+    assert.equal(health.status, 200);
+    const body = await health.json();
+    assert.equal(body.status, "degraded");
+    assert.equal(body.indexError, null);
+    assert.equal(body.lastRefreshError, null);
+    assert.match(body.checkpointError, /unavailable/);
+    assert.equal(body.indexedEvents, 1);
+  });
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].event, "health_degraded");
+  assert.match(logs[0].checkpointError, /unavailable/);
+});
+
+test("api configuration validates refresh deadlines and maximum staleness", () => {
   const base = {
     STORAGE_BACKEND: "local",
     API_PORT: "3001",
@@ -460,10 +552,16 @@ test("api configuration accepts an optional refresh deadline", () => {
     RETENTION_DAYS: "7",
   };
   assert.equal(loadApiConfig({ ...base }).refreshDeadlineMs, 5_000);
+  assert.equal(loadApiConfig({ ...base }).maxStaleMs, 600_000);
   assert.equal(loadApiConfig({ ...base, API_REFRESH_DEADLINE_MS: "2000" }).refreshDeadlineMs, 2_000);
+  assert.equal(loadApiConfig({ ...base, API_MAX_STALE_MS: "900000" }).maxStaleMs, 900_000);
   assert.throws(() => loadApiConfig({ ...base, API_REFRESH_DEADLINE_MS: "99" }), /API_REFRESH_DEADLINE_MS/);
   assert.throws(() => loadApiConfig({ ...base, API_REFRESH_DEADLINE_MS: "60001" }), /API_REFRESH_DEADLINE_MS/);
   assert.throws(() => loadApiConfig({ ...base, API_REFRESH_DEADLINE_MS: "abc" }), /API_REFRESH_DEADLINE_MS/);
+  assert.throws(
+    () => loadApiConfig({ ...base, API_MAX_STALE_MS: "29999" }),
+    /API_MAX_STALE_MS cannot be less than API_REFRESH_MS/,
+  );
 });
 
 test("api configuration requires a valid retention window", () => {
@@ -489,13 +587,26 @@ function apiConfig(overrides = {}) {
     retentionDays: 7,
     refreshMs: 30_000,
     refreshDeadlineMs: 5_000,
+    maxStaleMs: 600_000,
     allowedOrigin: "",
     ...overrides,
   };
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor(predicate, timeoutMs = 250) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for condition");
+    await delay(5);
+  }
+}
+
 async function withApi(options, run) {
-  const server = createApiApp(options).listen(0, "127.0.0.1");
+  const server = createApiApp({ logger: () => {}, ...options }).listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
     const { port } = server.address();

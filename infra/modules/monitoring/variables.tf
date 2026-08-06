@@ -29,6 +29,11 @@ variable "api_backend_service_name" {
   type        = string
 }
 
+variable "api_service_name" {
+  description = "Cloud Run API service name, used to scope degraded-health logs."
+  type        = string
+}
+
 variable "dead_letter_subscription_name" {
   description = "DLQ inspection subscription. Pass the pubsub module output."
   type        = string
@@ -63,7 +68,13 @@ variable "push_backlog_age_threshold_seconds" {
 }
 
 variable "indexer_stall_duration_seconds" {
-  description = "Duration string, e.g. 900s. How long cycle logs may be absent before alerting."
+  description = "How long durable range-progress logs may be absent before alerting."
   type        = string
-  default     = "900s"
+  default     = "300s"
+}
+
+variable "api_degraded_duration_seconds" {
+  description = "How long degraded API health must persist before sending a warning."
+  type        = string
+  default     = "600s"
 }

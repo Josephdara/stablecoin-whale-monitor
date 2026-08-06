@@ -37,7 +37,7 @@ type TransactionResponse = {
 };
 
 type HealthResponse = {
-  status: string;
+  status: "ok" | "degraded";
   lastProcessedBlock: number | null;
   checkpointUpdatedAt: string | null;
   checkpointAgeSeconds: number | null;
@@ -45,6 +45,8 @@ type HealthResponse = {
   indexedEvents: number;
   indexRefreshedAt: string | null;
   indexError: string | null;
+  lastRefreshError: string | null;
+  checkpointError: string | null;
 };
 
 type HealthLevel = "healthy" | "delayed" | "stale" | "unavailable";
@@ -528,6 +530,7 @@ const HEALTH_LABEL: Record<HealthLevel, string> = {
 
 function classifyHealth(health: HealthResponse | null, healthOk: boolean): HealthLevel {
   if (!healthOk || !health || health.indexError) return "unavailable";
+  if (health.lastRefreshError || health.checkpointError) return "delayed";
   const age = health.checkpointAgeSeconds;
   if (age == null) return "delayed";
   if (age < 120) return "healthy";
@@ -554,6 +557,7 @@ function isTransactionResponse(value: unknown): value is TransactionResponse {
   if (typeof value !== "object" || value === null) return false;
   const response = value as Record<string, unknown>;
   return (
+    (response.status === "ok" || response.status === "degraded") &&
     typeof response.transactionHash === "string" && HASH_PATTERN.test(response.transactionHash) &&
     Array.isArray(response.items) && response.items.every(isTransfer) &&
     Number.isSafeInteger(response.total) && Number(response.total) >= 0
@@ -569,7 +573,9 @@ function isHealthResponse(value: unknown): value is HealthResponse {
     Number.isSafeInteger(response.retentionDays) &&
     Number(response.retentionDays) >= 1 && Number(response.retentionDays) <= 365 &&
     Number.isSafeInteger(response.indexedEvents) &&
-    (response.indexError === null || typeof response.indexError === "string")
+    (response.indexError === null || typeof response.indexError === "string") &&
+    (response.lastRefreshError === null || typeof response.lastRefreshError === "string") &&
+    (response.checkpointError === null || typeof response.checkpointError === "string")
   );
 }
 

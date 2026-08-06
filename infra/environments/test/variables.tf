@@ -291,6 +291,12 @@ variable "api_refresh_deadline_ms" {
   default     = 5000
 }
 
+variable "api_max_stale_ms" {
+  description = "Maximum age at which the API may serve its cached index after a refresh failure."
+  type        = number
+  default     = 600000
+}
+
 variable "api_max_page_size" {
   description = "Maximum transfer page size accepted by the API."
   type        = number
@@ -306,7 +312,7 @@ variable "api_allowed_origin" {
 }
 
 variable "api_min_instances" {
-  description = "Minimum number of API instances; zero preserves request-based scale-to-zero billing."
+  description = "Minimum API instances. Use at least one when background refresh cadence must continue without requests."
   type        = number
   default     = 0
 }

@@ -7,7 +7,7 @@ I built this as a cloud engineering portfolio project: not just "read from an AP
 The project exists in two versions, both documented here:
 
 - **v1** runs on hand-configured Compute Engine VMs with systemd, Nginx, and a global load balancer. Build write-up: [Building and Deploying a Blockchain Indexer on Google Cloud](https://josephdara.hashnode.dev/building-and-deploying-a-blockchain-indexer-on-google-cloud).
-- **v2** containerizes the same codebase and runs it on Cloud Run, Cloud Scheduler, Pub/Sub, and GKE Autopilot. Full write-up, every command, and the incident log: [PLAYBOOK.md](PLAYBOOK.md).
+- **v2** containerizes the same codebase and runs it on Cloud Run and Pub/Sub; GKE Autopilot remains documented as a completed portability exercise. Full write-up, every command, and the incident log: [PLAYBOOK.md](PLAYBOOK.md).
 
 ## What it does
 
@@ -20,13 +20,13 @@ The project exists in two versions, both documented here:
 - Displays the newest transfers first in a statically exported Next.js frontend.
 - Runs on Google Cloud: a private indexer VM and public load-balanced web tier in v1, containers on Cloud Run in v2.
 
-## v2: Containerized on Cloud Run, Pub/Sub, and GKE
+## v2: Containerized on Cloud Run and Pub/Sub
 
-Version 2 moves the whole system from the hand-configured VM into a single container image that runs as three workloads, selected by arguments alone: the read-only API (Cloud Run Service), the indexer (Cloud Run Job, fired every minute by Cloud Scheduler), and a new email alerter that mails me any transfer of $1M or more (a private Cloud Run Service driven by Pub/Sub push).
+Version 2 moves the whole system from the hand-configured VM into a single container image that runs as three workloads, selected by arguments alone: the read-only API (Cloud Run Service), the continuously running indexer (Cloud Run Worker Pool), and an email alerter that mails me any transfer of $1M or more (a private Cloud Run Service driven by Pub/Sub push).
 
 ```text
-Scheduler (1 min) ──OAuth──▶ Cloud Run Job (indexer)
-                                │ writes NDJSON batch per block range
+Cloud Run Worker Pool (indexer) ── writes NDJSON batch per block range
+                                │
                                 ▼
               gs://swm-event/ethereum/ranges/<from>-<to>.json
                     │                          │ OBJECT_FINALIZE notification
@@ -47,6 +47,8 @@ Other changes worth knowing about:
 
   Readers handle both formats, so the v1 objects needed no migration. This cut the API's cold-start reads from ~8,800 objects to a handful and gives Pub/Sub one clean message per batch.
 - **Event backbone**: Cloud Storage notifications publish every new batch to a Pub/Sub topic, with a dead-letter queue for poison messages. The alerter is just the first subscriber.
+- **Indexer recovery**: each committed range emits a durable progress log, while caught-up cycles emit a completion log; either event satisfies the five-minute stall signal. A transient cycle failure is logged and retried after `POLL_INTERVAL_MS` instead of terminating the worker process.
+- **Health observability**: uptime checks assert HTTP `200` plus the expected chain identity, so usable-but-degraded responses do not page as outages. Structured degraded-health logs feed a separate warning that fires only when degradation persists for ten minutes.
 - **GKE Autopilot**: the same image was also deployed to Kubernetes (Deployment, CronJob, Workload Identity, LoadBalancer) as a same-day exercise, then torn down. No code changed, which was the point.
 
 ## Why this design
@@ -264,6 +266,7 @@ API_HOST=127.0.0.1
 API_PORT=3001
 API_REFRESH_MS=30000
 API_REFRESH_DEADLINE_MS=5000
+API_MAX_STALE_MS=600000
 API_MAX_PAGE_SIZE=50
 RETENTION_DAYS=7
 ```
@@ -284,17 +287,23 @@ two pages makes the earlier cursor expire, which returns `400`.
 
 ### Index freshness
 
-Freshness is enforced on the request path, not by a background timer. Under request-based Cloud Run
-billing the CPU is throttled between requests, so a timer would fire late or not at all.
+The process refreshes once at startup and then every `API_REFRESH_MS` in the background. The Cloud
+Run API service declares `cpu_idle = false`, so an allocated instance has CPU between requests; the
+test estate also keeps one minimum instance. Each request retains `ensureFresh` as a correctness
+backstop, and concurrent refresh attempts coalesce onto one storage sweep.
 
-Each request checks the age of the in-memory index. If it is older than `API_REFRESH_MS` the request
-awaits a storage refresh before responding; concurrent requests coalesce onto that single sweep. The
-process still refreshes once at startup, while container start has full CPU.
+After the first complete listing, refreshes pass the highest immutable range-object name as the GCS
+`startOffset`. Because range names contain zero-padded block numbers, listing cost grows with newly
+created objects rather than every retained object. Deliberate backfills below the current checkpoint
+require an API restart so the initial full listing can discover them.
 
-`API_REFRESH_DEADLINE_MS` (default `5000`) bounds how long both cold and warm requests wait for
-storage. If the refresh fails or exceeds that deadline, transfer endpoints return `503` instead of
-serving a stale successful response. `/api/health` also returns `503` with degraded index status.
-The in-flight refresh remains coalesced so another request cannot start a competing storage sweep.
+`API_REFRESH_DEADLINE_MS` (default `5000`) bounds how long a request waits for storage. A loaded
+index remains available after a failed or timed-out refresh until it reaches `API_MAX_STALE_MS`
+(default `600000`, and never lower than `API_REFRESH_MS`). During that window transfer endpoints
+return cached data and health returns HTTP `200` with `status: "degraded"` plus
+`lastRefreshError`. An index that never loaded or exceeded the maximum stale age returns `503`.
+Checkpoint read failures are reported separately as `checkpointError` and degrade health without
+discarding an otherwise usable index.
 
 ### `GET /api/transfers`
 

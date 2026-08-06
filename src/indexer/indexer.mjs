@@ -1,6 +1,13 @@
 import { buildEvent, decodeTransferLog, parseAmount, rangeObjectName } from "../event.mjs";
 
-export async function runIndexer({ config, rpc, storage, once = false, hooks = {} }) {
+export async function runIndexer({
+  config,
+  rpc,
+  storage,
+  once = false,
+  hooks = {},
+  logger = console.error,
+}) {
   await rpc.assertChainId();
   await storage.writeTokenMetadata({
     chain: config.chain,
@@ -10,8 +17,28 @@ export async function runIndexer({ config, rpc, storage, once = false, hooks = {
   });
 
   do {
-    const result = await runCycle({ config, rpc, storage, hooks });
-    console.error(JSON.stringify({ level: "info", message: "Indexer cycle complete", ...result }));
+    try {
+      const result = await runCycle({
+        config,
+        rpc,
+        storage,
+        hooks: {
+          ...hooks,
+          onRangeCommitted: hooks.onRangeCommitted ?? ((range) => {
+            logger(JSON.stringify({ level: "info", message: "Indexer range committed", ...range }));
+          }),
+        },
+      });
+      logger(JSON.stringify({ level: "info", message: "Indexer cycle complete", ...result }));
+    } catch (error) {
+      if (once) throw error;
+      logger(JSON.stringify({
+        level: "error",
+        message: "Indexer cycle failed; retrying",
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      if (hooks.onCycleError) await hooks.onCycleError(error);
+    }
     if (!once) await sleep(config.pollIntervalMs);
   } while (!once);
 }
@@ -59,6 +86,17 @@ export async function runCycle({ config, rpc, storage, hooks = {} }) {
     const expectedGeneration = checkpointState?.generation ?? "0";
     const written = await storage.writeCheckpoint(checkpoint, expectedGeneration);
     checkpointState = { value: checkpoint, generation: written.generation };
+
+    if (hooks.onRangeCommitted) {
+      await hooks.onRangeCommitted({
+        fromBlock: rangeResult.fromBlock,
+        toBlock: rangeResult.toBlock,
+        qualifyingEvents: rangeResult.qualifyingEvents,
+        eventsCreated: rangeResult.eventsCreated,
+        duplicateEvents: rangeResult.duplicateEvents,
+        checkpointGeneration: written.generation,
+      });
+    }
 
     rangesProcessed += 1;
     eventsCreated += rangeResult.eventsCreated;

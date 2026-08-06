@@ -160,7 +160,7 @@ export class EventIndex {
 
 }
 
-export function createApiApp({ config, storage, index }) {
+export function createApiApp({ config, storage, index, logger = console.error }) {
   const app = express();
   app.disable("x-powered-by");
 
@@ -219,10 +219,25 @@ export function createApiApp({ config, storage, index }) {
         : null;
 
       const maxStaleMs = config.maxStaleMs ?? config.refreshMs;
-      const indexError = index.lastError ??
-        (index.refreshedAt === null || index.isStale(maxStaleMs) ? refreshError : null);
+      const indexTooStale = index.refreshedAt === null || index.isStale(maxStaleMs);
+      const lastRefreshError = index.lastError ?? refreshError;
+      const indexError = indexTooStale
+        ? lastRefreshError ?? "Event index is stale"
+        : null;
+      const degraded = Boolean(indexError || lastRefreshError || checkpointError);
+      if (degraded) {
+        logSafely(logger, {
+          level: "warning",
+          component: "api",
+          event: "health_degraded",
+          message: "API health degraded",
+          indexError,
+          lastRefreshError,
+          checkpointError,
+        });
+      }
       response.status(indexError ? 503 : 200).json({
-        status: indexError ? "degraded" : "ok",
+        status: degraded ? "degraded" : "ok",
         chainId: config.chainId,
         lastProcessedBlock: checkpoint?.lastProcessedBlock ?? null,
         checkpointUpdatedAt: checkpoint?.updatedAt ?? null,
@@ -231,6 +246,7 @@ export function createApiApp({ config, storage, index }) {
         indexedEvents: index.events.length,
         indexRefreshedAt: index.refreshedAt,
         indexError,
+        lastRefreshError,
         checkpointError,
       });
     } catch (error) {
@@ -355,6 +371,14 @@ function serviceUnavailable(message) {
   return error;
 }
 
+function logSafely(logger, payload) {
+  try {
+    logger(JSON.stringify(payload));
+  } catch {
+    // Observability must not change endpoint availability.
+  }
+}
+
 async function requireFreshIndex(index, config) {
   try {
     await index.ensureFresh(config.refreshMs, config.refreshDeadlineMs);
@@ -362,8 +386,8 @@ async function requireFreshIndex(index, config) {
     // A missed deadline is not an outage. The in-memory index is still loaded
     // and typically only seconds stale, so serve it and fail only when it is
     // genuinely unusable: never loaded, or older than maxStaleMs.
-    if (index.refreshedAt === null || index.isStale(config.maxStaleMs ?? config.refreshMs)) {
-      throw serviceUnavailable("Event index could not be refreshed");
-    }
+  }
+  if (index.refreshedAt === null || index.isStale(config.maxStaleMs ?? config.refreshMs)) {
+    throw serviceUnavailable("Event index could not be refreshed");
   }
 }

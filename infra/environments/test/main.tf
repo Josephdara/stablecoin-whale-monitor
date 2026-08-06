@@ -109,6 +109,7 @@ module "cloud_run" {
   api_timeout_seconds       = var.api_timeout_seconds
   api_refresh_ms            = var.api_refresh_ms
   api_refresh_deadline_ms   = var.api_refresh_deadline_ms
+  api_max_stale_ms          = var.api_max_stale_ms
   api_max_page_size         = var.api_max_page_size
   api_allowed_origin        = var.api_allowed_origin
   event_retention_days      = var.event_retention_days
@@ -208,6 +209,7 @@ module "monitoring" {
 
   url_map_name             = module.edge.url_map_name
   api_backend_service_name = module.edge.api_backend_service_name
+  api_service_name         = module.cloud_run.api_service_name
 
   dead_letter_subscription_name = module.pubsub.dead_letter_subscription_name
   alert_subscription_name       = module.pubsub.alert_subscription_name

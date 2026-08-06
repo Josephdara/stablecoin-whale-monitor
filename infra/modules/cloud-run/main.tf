@@ -230,6 +230,7 @@ resource "google_cloud_run_v2_service" "api" {
           API_PORT                = "8080"
           API_REFRESH_MS          = tostring(var.api_refresh_ms)
           API_REFRESH_DEADLINE_MS = tostring(var.api_refresh_deadline_ms)
+          API_MAX_STALE_MS        = tostring(var.api_max_stale_ms)
           API_MAX_PAGE_SIZE       = tostring(var.api_max_page_size)
           API_ALLOWED_ORIGIN      = var.api_allowed_origin
           CHAIN_ID                = tostring(var.chain_id)
@@ -251,13 +252,19 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       resources {
-        limits = { cpu = var.api_cpu, memory = var.api_memory }
+        limits   = { cpu = var.api_cpu, memory = var.api_memory }
+        cpu_idle = false
       }
     }
   }
   # CD owns the deployed image; Terraform owns every other attribute. This is an ownership boundary, not drift suppression: 
   # it is what allows the deploy pipeline to update revisions without ever holding Terraform state access application_image is a bootstrap value only.
   lifecycle {
+    precondition {
+      condition     = var.api_max_stale_ms >= var.api_refresh_ms
+      error_message = "api_max_stale_ms must be greater than or equal to api_refresh_ms."
+    }
+
     ignore_changes = [
       template[0].containers[0].image,
       # gcloud stamps these on every deploy. Without them here, each CD run

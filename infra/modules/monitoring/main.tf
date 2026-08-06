@@ -33,7 +33,7 @@ resource "google_monitoring_uptime_check_config" "api" {
   }
 
   content_matchers {
-    content = "\"status\":\"ok\""
+    content = "\"chainId\":1"
     matcher = "CONTAINS_STRING"
   }
 }
@@ -86,6 +86,46 @@ resource "google_monitoring_alert_policy" "api_5xx" {
       aggregations {
         alignment_period   = "1800s"
         per_series_aligner = "ALIGN_RATE"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email.id]
+}
+
+resource "google_logging_metric" "api_degraded_health" {
+  project = var.project_id
+  name    = "swm-api-health-degraded-${var.environment}"
+  filter = join(" AND ", [
+    "resource.type=\"cloud_run_revision\"",
+    "resource.labels.service_name=\"${var.api_service_name}\"",
+    "jsonPayload.event=\"health_degraded\"",
+  ])
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+}
+
+resource "google_monitoring_alert_policy" "api_degraded_health" {
+  project      = var.project_id
+  display_name = "SWM API persistently degraded warning (${var.environment})"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Health remains degraded"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.api_degraded_health.name}\" AND resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = var.api_degraded_duration_seconds
+
+      evaluation_missing_data = "EVALUATION_MISSING_DATA_INACTIVE"
+
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_SUM"
       }
     }
   }
@@ -198,7 +238,7 @@ resource "google_logging_metric" "indexer_cycles" {
   filter = join(" AND ", [
     "resource.type=\"cloud_run_worker_pool\"",
     "resource.labels.worker_pool_name=\"${var.indexer_worker_pool_name}\"",
-    "jsonPayload.message=\"Indexer cycle complete\"",
+    "(jsonPayload.message=\"Indexer range committed\" OR jsonPayload.message=\"Indexer cycle complete\")",
   ])
 
   metric_descriptor {
@@ -213,7 +253,7 @@ resource "google_monitoring_alert_policy" "indexer_stalled" {
   combiner     = "OR"
 
   conditions {
-    display_name = "No completed cycles"
+    display_name = "No committed ranges or completed cycles"
     condition_threshold {
       filter = join(" AND ", [
         "metric.type=\"logging.googleapis.com/user/${google_logging_metric.indexer_cycles.name}\"",

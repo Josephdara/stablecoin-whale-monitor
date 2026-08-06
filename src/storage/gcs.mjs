@@ -69,7 +69,6 @@ export class GcsStorageAdapter {
     });
   }
 
-  
   async *iterateEvents({ knownNames = new Set(), startOffset } = {}) {
     let pageToken;
     do {

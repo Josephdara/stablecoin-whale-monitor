@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { processRange, runCycle } from "../src/indexer/indexer.mjs";
+import { processRange, runCycle, runIndexer } from "../src/indexer/indexer.mjs";
 import { FakeRpc, MemoryStorage, blockHash, testConfig, transferLog } from "./helpers.mjs";
 
 test("threshold is inclusive and applies to USDC and USDT", async () => {
@@ -22,12 +22,57 @@ test("confirmation buffer and 2,000-block boundaries advance an empty checkpoint
   const config = testConfig();
   const rpc = new FakeRpc({ latest: 2_112 });
   const storage = new MemoryStorage();
-  const result = await runCycle({ config, rpc, storage });
+  const committed = [];
+  const result = await runCycle({
+    config,
+    rpc,
+    storage,
+    hooks: { onRangeCommitted: async (range) => committed.push(range) },
+  });
 
   assert.deepEqual(rpc.ranges, [[100, 2_099], [2_100, 2_100]]);
+  assert.deepEqual(committed.map((range) => [range.fromBlock, range.toBlock]), [
+    [100, 2_099],
+    [2_100, 2_100],
+  ]);
+  assert.deepEqual(committed.map((range) => range.checkpointGeneration), ["1", "2"]);
   assert.equal(result.confirmedHead, 2_100);
   assert.equal(storage.checkpoint.lastProcessedBlock, 2_100);
   assert.equal(storage.checkpoint.lastProcessedBlockHash, blockHash(2_100));
+});
+
+test("the continuous indexer retries after a failed cycle", async () => {
+  const config = testConfig({ pollIntervalMs: 1 });
+  const rpc = new FakeRpc();
+  const storage = new MemoryStorage();
+  const logs = [];
+  let attempts = 0;
+  let failures = 0;
+  rpc.latestBlockNumber = async () => {
+    attempts += 1;
+    throw new Error("transient RPC failure");
+  };
+
+  await assert.rejects(
+    runIndexer({
+      config,
+      rpc,
+      storage,
+      logger: (line) => logs.push(JSON.parse(line)),
+      hooks: {
+        onCycleError: async () => {
+          failures += 1;
+          if (failures === 2) throw new Error("stop test loop");
+        },
+      },
+    }),
+    /stop test loop/,
+  );
+
+  assert.equal(attempts, 2);
+  assert.equal(failures, 2);
+  assert.equal(logs.length, 2);
+  assert.ok(logs.every((entry) => entry.message === "Indexer cycle failed; retrying"));
 });
 
 test("crash after event creation replays as one duplicate before checkpointing", async () => {
