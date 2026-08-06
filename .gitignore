@@ -48,4 +48,9 @@ SWM_GCP_Design.pdf
 coverage/
 .DS_Store
 cmd
-docs/
+
+# Local design artifacts; keep the versioned Markdown deployment documents.
+docs/*
+!docs/V1.md
+!docs/PLAYBOOK.md
+!docs/RUNBOOK.md

@@ -1,7 +1,20 @@
-# Stablecoin Whale Monitor: GCP Deployment Playbook
+# Stablecoin Whale Monitor v2 — GCP deployment playbook
 
-After deploying my application to [swm.josephdara.com](swm.josephdara.com) I decided to containerize aspects of the application to further test other resources available in GCP.
-The starting point was live: the whale monitor already ran on 2 hand-configured VM with systemd`swm-indexer` and  `swm-web`. This was more of a venture pratical exercise to test things locally and in the GCP resourcea: Artifact Registry → Cloud Run → Cloud Scheduler → Pub/Sub → GKE. A local Next.js frontend consumes the API from GCP to add some visualization outside `curling`.
+> **Historical document:** this playbook records the v2 containerization and
+> managed-platform exercise represented by the [`V2` tag](https://github.com/Josephdara/stablecoin-whale-monitor/tree/V2).
+> Its Cloud Run Job, Scheduler, manual IAM, and GKE commands are not the current
+> deployment procedure. For v3, start with the [README](../README.md) and follow the
+> [deployment runbook](RUNBOOK.md). The original VM system is documented in
+> [V1.md](V1.md).
+
+Version 2 began with the v1 site already running on two hand-configured Compute
+Engine VMs under `swm-indexer` and `swm-web`. The goal was to prove that the
+application could move unchanged through Docker and Artifact Registry into
+Cloud Run, Cloud Scheduler, Pub/Sub, and GKE Autopilot. A local Next.js frontend
+consumed the cloud API during the exercise.
+
+The commands below are retained as an execution record and incident log. They
+contain the project names and service choices used at that time.
 
 ---
 
@@ -74,7 +87,7 @@ Almost every line encodes a bug (Incidents 1-4):
 - `ENTRYPOINT ["node"]` + `CMD`: one image, workload chosen by args. No args → CMD stands → API. `--args scripts/fetch-usdc-logs.mjs,--once` → indexer. Kubernetes spells the same idea `command:`/`args:`.
 - No config files copied: the image is code only; config is injected per platform (see "twelve-factor" lesson below).
 
-One `.env` trap from local smoke testing worth recording: the project's dotenv loader strips quotes from values; Docker's `--env-file` passes them **literally**. `RPC_URL='https://…'` worked under `node` and crashed in the container with `TypeError: Invalid URL`, because the env var began with a literal `'`. 
+One `.env` trap from local smoke testing worth recording: the project's dotenv loader strips quotes from values; Docker's `--env-file` passes them **literally**. `RPC_URL='https://…'` worked under `node` and crashed in the container with `TypeError: Invalid URL`, because the env var began with a literal `'`.
 
 ### Build for the right architecture
 
@@ -94,7 +107,7 @@ Hence verifying the architecture both locally (`docker inspect`) and *in the reg
 ### Smoke tests
 
 ```bash
-# API (default CMD): This will not run locally if your PC is arm64, so you'll have to build a different version to test locally without  using --platform linux/amd64 
+# API (default CMD): This will not run locally if your PC is arm64, so you'll have to build a different version to test locally without using --platform linux/amd64
 docker run --rm -p 8080:8080 \
   -v "$PWD/tmp/smoke:/app/data" \
   -e STORAGE_BACKEND=local -e LOCAL_STORAGE_ROOT=data/local-storage \
@@ -463,7 +476,7 @@ kubectl get service swm-api -w               # wait for EXTERNAL-IP, #If this fa
 curl http://<EXTERNAL-IP>/api/health
 
 kubectl create job swm-indexer-now --from=cronjob/swm-indexer   # fire now (≙ gcloud run jobs execute)
-kubectl logs -f job/swm-indexer-now       
+kubectl logs -f job/swm-indexer-now
 
 kubectl scale deployment swm-api --replicas 5
 kubectl autoscale deployment swm-api --min 2 --max 6 --cpu-percent 70
@@ -530,5 +543,3 @@ Chronological across both working sessions: 1-6 are the containerization bugs, 7
 | 17 | Fake test objects would poison the API | The API indexes and validates everything under `ethereum/`; an invalid object 503s it | Test the alerter by lowering `ALERT_MIN_AMOUNT` on real data; test the DLQ with a poison *message* (nonexistent objectId), which never touches the bucket |
 
 ---
-
-

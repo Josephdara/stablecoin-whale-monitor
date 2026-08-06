@@ -1,4 +1,9 @@
-# Deployment runbook
+# Stablecoin Whale Monitor v3 — deployment runbook
+
+This is the current clone-to-deploy procedure. For architecture and local
+development, start with [README.md](../README.md). The VM-era v1 system is preserved
+in [V1.md](V1.md), and the manual container/GKE v2 exercise remains in
+[PLAYBOOK.md](PLAYBOOK.md).
 
 This runbook recreates the Stablecoin Whale Monitor test estate from a fork or
 clone of this repository. Run every shell command from the repository root.
@@ -817,3 +822,29 @@ usually the cleanest final action.
 - Terraform commands and state mutations are operator-controlled locally; the
   authoritative state is stored remotely in the secured GCS backend. No
   pipeline identity can read or write it.
+
+## Deploying to production
+
+Production is not deployed by changing `environment` in the test tfvars. The
+`infra/environments/prod` root is currently an empty scaffold and must first be
+completed from the test composition, then reviewed as an independent estate.
+Give it a separate GCP project and GCS state backend, globally unique bucket
+names, production domain and secrets, `storage_force_destroy = false`, Cloud Run
+deletion protection, and explicit production Cloud Build substitutions. Use a
+production-only release pattern such as `^release-prod-.*$`; CI and verification
+must validate the production root as well as test.
+
+After that review, bootstrap and operate Terraform locally from the repository
+root against production's remote backend:
+
+```bash
+export TF_DIR="infra/environments/prod"
+./infra/scripts/bootstrap-state.sh prod
+terraform -chdir="$TF_DIR" validate
+terraform -chdir="$TF_DIR" plan -input=false -out=/tmp/swm-prod.tfplan
+terraform -chdir="$TF_DIR" apply /tmp/swm-prod.tfplan
+```
+
+Publish production releases with a `release-prod-*` tag only after test has
+passed, then review and approve the production CD build. Never reuse the test
+state bucket or apply a production plan from `infra/environments/test`.
