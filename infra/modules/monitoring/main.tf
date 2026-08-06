@@ -137,7 +137,7 @@ resource "google_monitoring_alert_policy" "api_latency" {
   project      = var.project_id
   display_name = "SWM API high latency p99 (${var.environment})"
   combiner     = "OR"
-  enabled      = false
+  enabled      = true
 
   conditions {
     display_name = "p99 latency above threshold"
