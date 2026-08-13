@@ -9,7 +9,8 @@
 set -uo pipefail
 
 PUBLIC_URL="${PUBLIC_URL:-https://swm.josephdara.com}"
-ALERTER_URL="${ALERTER_URL:-https://swm-alerter-test-pkklwzsqha-uk.a.run.app}"
+# Alerting disabled; keep the endpoint default for easy restoration.
+# ALERTER_URL="${ALERTER_URL:-https://swm-alerter-test-pkklwzsqha-uk.a.run.app}"
 PROJECT_ID="${PROJECT_ID:-swm-gcp-test-v2}"
 EVENTS_BUCKET="${EVENTS_BUCKET:-swm-gcp-test-v2-events}"
 STATE_BUCKET="${STATE_BUCKET:-swm-gcp-test-v2-app-state}"
@@ -118,14 +119,15 @@ fi
 transfers_code=$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_URL/api/transfers?limit=5")
 assert "transfers endpoint responds" "200" "$transfers_code"
 
-section "Isolation"
-
-alerter_code=$(curl -sS -o /dev/null -w '%{http_code}' "$ALERTER_URL/pubsub" -X POST -H 'Content-Type: application/json' -d '{}')
-if [ "$alerter_code" = "200" ] || [ "$alerter_code" = "204" ]; then
-  bad "alerter rejects unauthenticated calls (got $alerter_code)"
-else
-  ok "alerter rejects unauthenticated calls ($alerter_code)"
-fi
+# Alerting disabled; keep the isolation check for easy restoration.
+# section "Isolation"
+#
+# alerter_code=$(curl -sS -o /dev/null -w '%{http_code}' "$ALERTER_URL/pubsub" -X POST -H 'Content-Type: application/json' -d '{}')
+# if [ "$alerter_code" = "200" ] || [ "$alerter_code" = "204" ]; then
+#   bad "alerter rejects unauthenticated calls (got $alerter_code)"
+# else
+#   ok "alerter rejects unauthenticated calls ($alerter_code)"
+# fi
 
 section "Storage policy"
 

@@ -162,51 +162,52 @@ resource "google_monitoring_alert_policy" "api_latency" {
   notification_channels = [google_monitoring_notification_channel.email.id]
 }
 
-resource "google_monitoring_alert_policy" "dead_letter" {
-  project      = var.project_id
-  display_name = "SWM dead-letter queue non-empty (${var.environment})"
-  combiner     = "OR"
-
-  conditions {
-    display_name = "Undelivered messages in the DLQ"
-    condition_threshold {
-      filter          = "metric.type=\"pubsub.googleapis.com/subscription/num_undelivered_messages\" AND resource.type=\"pubsub_subscription\" AND resource.label.subscription_id=\"${var.dead_letter_subscription_name}\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0
-      duration        = "60s"
-
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_MAX"
-      }
-    }
-  }
-
-  notification_channels = [google_monitoring_notification_channel.email.id]
-}
-
-resource "google_monitoring_alert_policy" "push_backlog" {
-  project      = var.project_id
-  display_name = "SWM alert push backlog ageing (${var.environment})"
-  combiner     = "OR"
-
-  conditions {
-    display_name = "Oldest unacked message too old"
-    condition_threshold {
-      filter          = "metric.type=\"pubsub.googleapis.com/subscription/oldest_unacked_message_age\" AND resource.type=\"pubsub_subscription\" AND resource.label.subscription_id=\"${var.alert_subscription_name}\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = var.push_backlog_age_threshold_seconds
-      duration        = "300s"
-
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_MAX"
-      }
-    }
-  }
-
-  notification_channels = [google_monitoring_notification_channel.email.id]
-}
+# Alerting service disabled; keep its Pub/Sub policies for easy restoration.
+# resource "google_monitoring_alert_policy" "dead_letter" {
+#   project      = var.project_id
+#   display_name = "SWM dead-letter queue non-empty (${var.environment})"
+#   combiner     = "OR"
+#
+#   conditions {
+#     display_name = "Undelivered messages in the DLQ"
+#     condition_threshold {
+#       filter          = "metric.type=\"pubsub.googleapis.com/subscription/num_undelivered_messages\" AND resource.type=\"pubsub_subscription\" AND resource.label.subscription_id=\"${var.dead_letter_subscription_name}\""
+#       comparison      = "COMPARISON_GT"
+#       threshold_value = 0
+#       duration        = "60s"
+#
+#       aggregations {
+#         alignment_period   = "60s"
+#         per_series_aligner = "ALIGN_MAX"
+#       }
+#     }
+#   }
+#
+#   notification_channels = [google_monitoring_notification_channel.email.id]
+# }
+#
+# resource "google_monitoring_alert_policy" "push_backlog" {
+#   project      = var.project_id
+#   display_name = "SWM alert push backlog ageing (${var.environment})"
+#   combiner     = "OR"
+#
+#   conditions {
+#     display_name = "Oldest unacked message too old"
+#     condition_threshold {
+#       filter          = "metric.type=\"pubsub.googleapis.com/subscription/oldest_unacked_message_age\" AND resource.type=\"pubsub_subscription\" AND resource.label.subscription_id=\"${var.alert_subscription_name}\""
+#       comparison      = "COMPARISON_GT"
+#       threshold_value = var.push_backlog_age_threshold_seconds
+#       duration        = "300s"
+#
+#       aggregations {
+#         alignment_period   = "60s"
+#         per_series_aligner = "ALIGN_MAX"
+#       }
+#     }
+#   }
+#
+#   notification_channels = [google_monitoring_notification_channel.email.id]
+# }
 
 
 resource "google_monitoring_alert_policy" "indexer_instance" {

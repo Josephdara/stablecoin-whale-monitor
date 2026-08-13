@@ -1,3 +1,4 @@
+/* Alerting disabled; keep the complete variable interface for restoration.
 variable "project_id" {
   description = "Project that owns the topics, subscriptions, and notification."
   type        = string
@@ -73,3 +74,4 @@ variable "pubsub_maximum_backoff_seconds" {
   description = "Maximum retry backoff."
   type        = number
 }
+*/

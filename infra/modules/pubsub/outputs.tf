@@ -1,3 +1,4 @@
+/* Alerting disabled; keep the complete output interface for restoration.
 output "event_topic_name" {
   description = "Event topic name, for monitoring filters."
   value       = google_pubsub_topic.events.name
@@ -32,3 +33,4 @@ output "notification_id" {
   description = "Cloud Storage notification ID, for the smoke test to confirm the prefix binding."
   value       = google_storage_notification.events.id
 }
+*/

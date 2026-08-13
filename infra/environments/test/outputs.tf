@@ -60,15 +60,16 @@ output "indexer_service_account_email" {
   value       = module.iam.indexer_service_account_email
 }
 
-output "alerter_service_account_email" {
-  description = "Runtime identity for the private alerter."
-  value       = module.iam.alerter_service_account_email
-}
-
-output "pubsub_push_service_account_email" {
-  description = "Pub/Sub push identity awaiting its alerter invoker binding."
-  value       = module.iam.pubsub_push_service_account_email
-}
+# Alerting disabled; keep the outputs for easy restoration.
+# output "alerter_service_account_email" {
+#   description = "Runtime identity for the private alerter."
+#   value       = module.iam.alerter_service_account_email
+# }
+#
+# output "pubsub_push_service_account_email" {
+#   description = "Pub/Sub push identity awaiting its alerter invoker binding."
+#   value       = module.iam.pubsub_push_service_account_email
+# }
 
 
 
@@ -77,30 +78,30 @@ output "rpc_secret_id" {
   value       = module.secrets.rpc_secret_id
 }
 
-output "gmail_secret_id" {
-  description = "Gmail secret container. A version must be added manually before the alerter deploys."
-  value       = module.secrets.gmail_secret_id
-}
-
-output "event_topic_name" {
-  description = "Pub/Sub topic receiving Cloud Storage event notifications."
-  value       = module.pubsub.event_topic_name
-}
-
-output "dead_letter_topic_name" {
-  description = "Dead-letter topic."
-  value       = module.pubsub.dead_letter_topic_name
-}
-
-output "alert_subscription_name" {
-  description = "Authenticated push subscription delivering to the alerter."
-  value       = module.pubsub.alert_subscription_name
-}
-
-output "dead_letter_subscription_name" {
-  description = "Pull subscription for dead-letter inspection."
-  value       = module.pubsub.dead_letter_subscription_name
-}
+# output "gmail_secret_id" {
+#   description = "Gmail secret container. A version must be added manually before the alerter deploys."
+#   value       = module.secrets.gmail_secret_id
+# }
+#
+# output "event_topic_name" {
+#   description = "Pub/Sub topic receiving Cloud Storage event notifications."
+#   value       = module.pubsub.event_topic_name
+# }
+#
+# output "dead_letter_topic_name" {
+#   description = "Dead-letter topic."
+#   value       = module.pubsub.dead_letter_topic_name
+# }
+#
+# output "alert_subscription_name" {
+#   description = "Authenticated push subscription delivering to the alerter."
+#   value       = module.pubsub.alert_subscription_name
+# }
+#
+# output "dead_letter_subscription_name" {
+#   description = "Pull subscription for dead-letter inspection."
+#   value       = module.pubsub.dead_letter_subscription_name
+# }
 
 output "load_balancer_ip" {
   description = "A record target for swm.josephdara.com."

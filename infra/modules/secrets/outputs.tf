@@ -8,12 +8,13 @@ output "rpc_secret_name" {
   value       = google_secret_manager_secret.rpc_url.id
 }
 
-output "gmail_secret_id" {
-  description = "Short secret ID, e.g. swm-gmail-app-password."
-  value       = google_secret_manager_secret.gmail_app_password.secret_id
-}
-
-output "gmail_secret_name" {
-  description = "Full projects/<number>/secrets/<id> name."
-  value       = google_secret_manager_secret.gmail_app_password.id
-}
+# Alerting disabled; keep the outputs for easy restoration.
+# output "gmail_secret_id" {
+#   description = "Short secret ID, e.g. swm-gmail-app-password."
+#   value       = google_secret_manager_secret.gmail_app_password.secret_id
+# }
+#
+# output "gmail_secret_name" {
+#   description = "Full projects/<number>/secrets/<id> name."
+#   value       = google_secret_manager_secret.gmail_app_password.id
+# }

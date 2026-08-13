@@ -89,99 +89,100 @@ resource "google_cloud_run_v2_worker_pool" "indexer" {
 
 
 
-resource "google_cloud_run_v2_service_iam_member" "alerter_pubsub_invoker" {
-  project  = var.project_id
-  location = var.region
-  name     = google_cloud_run_v2_service.alerter.name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${var.pubsub_push_service_account_email}"
-}
+# Alerting disabled; keep the binding definition for easy restoration.
+# resource "google_cloud_run_v2_service_iam_member" "alerter_pubsub_invoker" {
+#   project  = var.project_id
+#   location = var.region
+#   name     = google_cloud_run_v2_service.alerter.name
+#   role     = "roles/run.invoker"
+#   member   = "serviceAccount:${var.pubsub_push_service_account_email}"
+# }
 
 
 
-resource "google_cloud_run_v2_service" "alerter" {
-  project             = var.project_id
-  name                = var.alerter_service_name
-  location            = var.region
-  ingress             = "INGRESS_TRAFFIC_INTERNAL_ONLY"
-  deletion_protection = var.deletion_protection
-  labels              = var.labels
-
-  scaling {
-    min_instance_count = var.alerter_min_instances
-    max_instance_count = var.alerter_max_instances
-  }
-
-  template {
-    service_account = var.alerter_service_account_email
-    timeout         = "${var.alerter_timeout_seconds}s"
-
-    scaling {
-      min_instance_count = var.alerter_min_instances
-      max_instance_count = var.alerter_max_instances
-    }
-
-    containers {
-      image = var.application_image
-      args  = ["src/alerter/server.mjs"]
-
-      ports {
-        container_port = 8080
-      }
-
-      dynamic "env" {
-        for_each = {
-          GCS_EVENTS_BUCKET = var.events_bucket_name
-          API_HOST          = "0.0.0.0"
-          API_PORT          = "8080"
-          ALERT_MIN_AMOUNT  = var.alert_minimum_amount
-        }
-        content {
-          name  = env.key
-          value = env.value
-        }
-      }
-
-      env {
-        name  = "ALERT_EMAIL_TO"
-        value = var.alert_email_to
-      }
-
-      env {
-        name  = "ALERT_EMAIL_FROM"
-        value = var.alert_email_from
-      }
-
-      env {
-        name = "GMAIL_APP_PASSWORD"
-        value_source {
-          secret_key_ref {
-            secret  = var.gmail_secret_id
-            version = "latest"
-          }
-        }
-      }
-
-      resources {
-        limits   = { cpu = var.alerter_cpu, memory = var.alerter_memory }
-        cpu_idle = true
-      }
-    }
-  }
-  # CD owns the deployed image; Terraform owns every other attribute. This is an ownership boundary, not drift suppression: 
-  # it is what allows the deploy pipeline to update revisions without ever holding Terraform state access application_image is a bootstrap value only.
-
-  lifecycle {
-    ignore_changes = [
-      template[0].containers[0].image,
-      # gcloud stamps these on every deploy. Without them here, each CD run
-      # leaves a permanent diff and the empty-plan signal is lost.
-      client,
-      client_version,
-    ]
-  }
-
-}
+# Alerting disabled; keep the service definition for easy restoration.
+# resource "google_cloud_run_v2_service" "alerter" {
+#   project             = var.project_id
+#   name                = var.alerter_service_name
+#   location            = var.region
+#   ingress             = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+#   deletion_protection = var.deletion_protection
+#   labels              = var.labels
+#
+#   scaling {
+#     min_instance_count = var.alerter_min_instances
+#     max_instance_count = var.alerter_max_instances
+#   }
+#
+#   template {
+#     service_account = var.alerter_service_account_email
+#     timeout         = "${var.alerter_timeout_seconds}s"
+#
+#     scaling {
+#       min_instance_count = var.alerter_min_instances
+#       max_instance_count = var.alerter_max_instances
+#     }
+#
+#     containers {
+#       image = var.application_image
+#       args  = ["src/alerter/server.mjs"]
+#
+#       ports {
+#         container_port = 8080
+#       }
+#
+#       dynamic "env" {
+#         for_each = {
+#           GCS_EVENTS_BUCKET = var.events_bucket_name
+#           API_HOST          = "0.0.0.0"
+#           API_PORT          = "8080"
+#           ALERT_MIN_AMOUNT  = var.alert_minimum_amount
+#         }
+#         content {
+#           name  = env.key
+#           value = env.value
+#         }
+#       }
+#
+#       env {
+#         name  = "ALERT_EMAIL_TO"
+#         value = var.alert_email_to
+#       }
+#
+#       env {
+#         name  = "ALERT_EMAIL_FROM"
+#         value = var.alert_email_from
+#       }
+#
+#       env {
+#         name = "GMAIL_APP_PASSWORD"
+#         value_source {
+#           secret_key_ref {
+#             secret  = var.gmail_secret_id
+#             version = "latest"
+#           }
+#         }
+#       }
+#
+#       resources {
+#         limits   = { cpu = var.alerter_cpu, memory = var.alerter_memory }
+#         cpu_idle = true
+#       }
+#     }
+#   }
+#   # CD owns the deployed image; Terraform owns every other attribute. This is an ownership boundary, not drift suppression:
+#   # it is what allows the deploy pipeline to update revisions without ever holding Terraform state access application_image is a bootstrap value only.
+#
+#   lifecycle {
+#     ignore_changes = [
+#       template[0].containers[0].image,
+#       # gcloud stamps these on every deploy. Without them here, each CD run
+#       # leaves a permanent diff and the empty-plan signal is lost.
+#       client,
+#       client_version,
+#     ]
+#   }
+# }
 
 
 resource "google_cloud_run_v2_service_iam_member" "api_public" {

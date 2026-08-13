@@ -1,3 +1,4 @@
+/* Alerting disabled; keep the complete Pub/Sub implementation for restoration.
 data "google_storage_project_service_account" "gcs" {
   project = var.project_id
 }
@@ -93,3 +94,4 @@ resource "google_storage_notification" "events" {
 
   depends_on = [google_pubsub_topic_iam_member.gcs_publisher]
 }
+*/

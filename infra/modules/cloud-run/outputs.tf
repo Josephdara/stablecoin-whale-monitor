@@ -8,20 +8,21 @@ output "api_service_uri" {
   value       = google_cloud_run_v2_service.api.uri
 }
 
-output "alerter_service_name" {
-  description = "Private alerter service name."
-  value       = google_cloud_run_v2_service.alerter.name
-}
-
-output "alerter_service_uri" {
-  description = "Direct run.app URL. Used by the smoke test to assert unauthenticated callers are rejected."
-  value       = google_cloud_run_v2_service.alerter.uri
-}
-
-output "alerter_push_endpoint" {
-  description = "Push endpoint for the Pub/Sub subscription. Append the /pubsub path from src/alerter/server.mjs."
-  value       = "${google_cloud_run_v2_service.alerter.uri}/pubsub"
-}
+# Alerting disabled; keep the outputs for easy restoration.
+# output "alerter_service_name" {
+#   description = "Private alerter service name."
+#   value       = google_cloud_run_v2_service.alerter.name
+# }
+#
+# output "alerter_service_uri" {
+#   description = "Direct run.app URL. Used by the smoke test to assert unauthenticated callers are rejected."
+#   value       = google_cloud_run_v2_service.alerter.uri
+# }
+#
+# output "alerter_push_endpoint" {
+#   description = "Push endpoint for the Pub/Sub subscription. Append the /pubsub path from src/alerter/server.mjs."
+#   value       = "${google_cloud_run_v2_service.alerter.uri}/pubsub"
+# }
 
 output "indexer_worker_pool_name" {
   description = "Worker Pool name, for monitoring and the missing-instance alert."

@@ -14,19 +14,20 @@ resource "google_service_account" "indexer" {
   description  = "Create-only on events, read/write on application state, reads the RPC secret."
 }
 
-resource "google_service_account" "alerter" {
-  project      = var.project_id
-  account_id   = var.alerter_service_account_id
-  display_name = "SWM alerter runtime"
-  description  = "Read-only on events, reads the Gmail secret. No state access."
-}
-
-resource "google_service_account" "pubsub_push" {
-  project      = var.project_id
-  account_id   = var.pubsub_push_service_account_id
-  display_name = "SWM Pub/Sub push identity"
-  description  = "Mints OIDC tokens to invoke the private alerter. Invoker binding is created with the Cloud Run service."
-}
+# Alerting disabled; keep the dedicated identities for easy restoration.
+# resource "google_service_account" "alerter" {
+#   project      = var.project_id
+#   account_id   = var.alerter_service_account_id
+#   display_name = "SWM alerter runtime"
+#   description  = "Read-only on events, reads the Gmail secret. No state access."
+# }
+#
+# resource "google_service_account" "pubsub_push" {
+#   project      = var.project_id
+#   account_id   = var.pubsub_push_service_account_id
+#   display_name = "SWM Pub/Sub push identity"
+#   description  = "Mints OIDC tokens to invoke the private alerter. Invoker binding is created with the Cloud Run service."
+# }
 
 
 # Indexer as objectCreator for Events bucket
@@ -69,19 +70,18 @@ resource "google_storage_bucket_iam_member" "api_state_viewer" {
 
 # alerter as objectViewer for Events
 
-resource "google_storage_bucket_iam_member" "alerter_events_viewer" {
-  bucket = var.events_bucket_name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.alerter.email}"
-}
+# resource "google_storage_bucket_iam_member" "alerter_events_viewer" {
+#   bucket = var.events_bucket_name
+#   role   = "roles/storage.objectViewer"
+#   member = "serviceAccount:${google_service_account.alerter.email}"
+# }
 
 # alerter as secretAccessor for Gmail key
 
-resource "google_secret_manager_secret_iam_member" "alerter_gmail" {
-  project   = var.project_id
-  secret_id = var.gmail_secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.alerter.email}"
-}
-
+# resource "google_secret_manager_secret_iam_member" "alerter_gmail" {
+#   project   = var.project_id
+#   secret_id = var.gmail_secret_id
+#   role      = "roles/secretmanager.secretAccessor"
+#   member    = "serviceAccount:${google_service_account.alerter.email}"
+# }
 

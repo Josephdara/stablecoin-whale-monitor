@@ -34,15 +34,16 @@ variable "api_service_name" {
   type        = string
 }
 
-variable "dead_letter_subscription_name" {
-  description = "DLQ inspection subscription. Pass the pubsub module output."
-  type        = string
-}
-
-variable "alert_subscription_name" {
-  description = "Push subscription whose backlog age is monitored."
-  type        = string
-}
+# Alerting disabled; keep these inputs for easy restoration.
+# variable "dead_letter_subscription_name" {
+#   description = "DLQ inspection subscription. Pass the pubsub module output."
+#   type        = string
+# }
+#
+# variable "alert_subscription_name" {
+#   description = "Push subscription whose backlog age is monitored."
+#   type        = string
+# }
 
 variable "indexer_worker_pool_name" {
   description = "Worker Pool name, used by both indexer policies and the log metric filter."
@@ -61,11 +62,11 @@ variable "api_latency_threshold_ms" {
   default     = 2000
 }
 
-variable "push_backlog_age_threshold_seconds" {
-  description = "Oldest unacked message age indicating the alerter is not keeping up. A number, not a duration string."
-  type        = number
-  default     = 600
-}
+# variable "push_backlog_age_threshold_seconds" {
+#   description = "Oldest unacked message age indicating the alerter is not keeping up. A number, not a duration string."
+#   type        = number
+#   default     = 600
+# }
 
 variable "indexer_stall_duration_seconds" {
   description = "How long durable range-progress logs may be absent before alerting."

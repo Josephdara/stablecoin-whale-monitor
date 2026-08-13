@@ -8,9 +8,10 @@ variable "rpc_secret_id" {
   type = string
 }
 
-variable "gmail_secret_id" {
-  type = string
-}
+# Alerting disabled; keep the variable for easy restoration.
+# variable "gmail_secret_id" {
+#   type = string
+# }
 
 variable "labels" {
   description = "Labels for the secrets."

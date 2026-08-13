@@ -9,10 +9,10 @@ substitutions:
   _ARTIFACTS_BUCKET: swm-gcp-test-v2-build-artifacts
   _FRONTEND_BUCKET: swm-gcp-test-v2-frontend
   _API_SERVICE: swm-api-test
-  _ALERTER_SERVICE: swm-alerter-test
+  # _ALERTER_SERVICE: swm-alerter-test
   _INDEXER_POOL: swm-indexer-test
   _PUBLIC_URL: https://swm.josephdara.com
-  _ALERTER_URL: https://swm-alerter-test-pkklwzsqha-uk.a.run.app
+  # _ALERTER_URL: https://swm-alerter-test-pkklwzsqha-uk.a.run.app
   _EVENTS_BUCKET: swm-gcp-test-v2-events
   _STATE_BUCKET: swm-gcp-test-v2-app-state
   _TF_STATE_BUCKET: swm-gcp-state-v2
@@ -91,15 +91,16 @@ steps:
         echo "API did not become healthy after deploy" >&2
         exit 1
 
-  - id: deploy-alerter
-    name: gcr.io/cloud-builders/gcloud
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        set -e
-        gcloud run services update ${_ALERTER_SERVICE} --region=${_REGION} \
-          --image="$$(cat /workspace/digest.txt)" --quiet
+  # Alerting disabled; keep the deploy step for easy restoration.
+  # - id: deploy-alerter
+  #   name: gcr.io/cloud-builders/gcloud
+  #   entrypoint: bash
+  #   args:
+  #     - -c
+  #     - |
+  #       set -e
+  #       gcloud run services update ${_ALERTER_SERVICE} --region=${_REGION} \
+  #         --image="$$(cat /workspace/digest.txt)" --quiet
 
 
   - id: deploy-indexer
@@ -137,7 +138,9 @@ steps:
       - |
         set -e
         DIGEST=$$(cat /workspace/digest.txt)
-        for svc in ${_API_SERVICE} ${_ALERTER_SERVICE}; do
+        # Alerting disabled; keep the former service list for easy restoration.
+        # for svc in ${_API_SERVICE} ${_ALERTER_SERVICE}; do
+        for svc in ${_API_SERVICE}; do
           RUNNING=$$(gcloud run services describe $$svc --region=${_REGION} \
             --format='value(spec.template.spec.containers[0].image)')
           test "$$RUNNING" = "$$DIGEST" || { echo "$$svc is running $$RUNNING, expected $$DIGEST" >&2; exit 1; }
@@ -155,8 +158,9 @@ steps:
         # back to its own hardcoded test defaults, so a prod deploy would smoke
         # test the test estate and report green.
         chmod +x infra/scripts/smoke-test.sh
+        # Alerting disabled; keep the former assignment for easy restoration.
+        # ALERTER_URL="${_ALERTER_URL}" \
         PUBLIC_URL="${_PUBLIC_URL}" \
-        ALERTER_URL="${_ALERTER_URL}" \
         PROJECT_ID="${PROJECT_ID}" \
         EVENTS_BUCKET="${_EVENTS_BUCKET}" \
         STATE_BUCKET="${_STATE_BUCKET}" \

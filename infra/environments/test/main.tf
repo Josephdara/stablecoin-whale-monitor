@@ -58,10 +58,11 @@ module "storage" {
 module "secrets" {
   source = "../../modules/secrets"
 
-  project_id      = var.project_id
-  rpc_secret_id   = var.rpc_secret_id
-  gmail_secret_id = var.gmail_secret_id
-  labels          = var.common_labels
+  project_id    = var.project_id
+  rpc_secret_id = var.rpc_secret_id
+  # Alerting disabled; preserve this input for easy restoration.
+  # gmail_secret_id = var.gmail_secret_id
+  labels = var.common_labels
 
   depends_on = [module.project-services]
 }
@@ -72,16 +73,17 @@ module "iam" {
   project_id = var.project_id
 
 
-  api_service_account_id         = var.api_service_account_id
-  indexer_service_account_id     = var.indexer_service_account_id
-  alerter_service_account_id     = var.alerter_service_account_id
-  pubsub_push_service_account_id = var.pubsub_push_service_account_id
+  api_service_account_id     = var.api_service_account_id
+  indexer_service_account_id = var.indexer_service_account_id
+  # Alerting disabled; preserve these inputs for easy restoration.
+  # alerter_service_account_id     = var.alerter_service_account_id
+  # pubsub_push_service_account_id = var.pubsub_push_service_account_id
 
 
   events_bucket_name = module.storage.events_bucket_name
   state_bucket_name  = module.storage.state_bucket_name
   rpc_secret_id      = module.secrets.rpc_secret_id
-  gmail_secret_id    = module.secrets.gmail_secret_id
+  # gmail_secret_id = module.secrets.gmail_secret_id
 
 
   depends_on = [module.secrets]
@@ -99,7 +101,8 @@ module "cloud_run" {
   events_bucket_name = module.storage.events_bucket_name
   state_bucket_name  = module.storage.state_bucket_name
   rpc_secret_id      = module.secrets.rpc_secret_id
-  gmail_secret_id    = module.secrets.gmail_secret_id
+  # Alerting disabled; preserve this input for easy restoration.
+  # gmail_secret_id = module.secrets.gmail_secret_id
 
   api_service_name          = var.api_service_name
   api_service_account_email = module.iam.api_service_account_email
@@ -116,17 +119,18 @@ module "cloud_run" {
   api_cpu                   = var.api_cpu
   api_memory                = var.api_memory
 
-  alerter_service_name              = var.alerter_service_name
-  alerter_service_account_email     = module.iam.alerter_service_account_email
-  pubsub_push_service_account_email = module.iam.pubsub_push_service_account_email
-  alerter_min_instances             = var.alerter_min_instances
-  alerter_max_instances             = var.alerter_max_instances
-  alerter_timeout_seconds           = var.alerter_timeout_seconds
-  alert_minimum_amount              = var.alert_minimum_amount
-  alert_email_to                    = var.alert_email_to
-  alert_email_from                  = var.alert_email_from
-  alerter_cpu                       = var.alerter_cpu
-  alerter_memory                    = var.alerter_memory
+  # Alerting disabled; preserve these inputs for easy restoration.
+  # alerter_service_name              = var.alerter_service_name
+  # alerter_service_account_email     = module.iam.alerter_service_account_email
+  # pubsub_push_service_account_email = module.iam.pubsub_push_service_account_email
+  # alerter_min_instances             = var.alerter_min_instances
+  # alerter_max_instances             = var.alerter_max_instances
+  # alerter_timeout_seconds           = var.alerter_timeout_seconds
+  # alert_minimum_amount              = var.alert_minimum_amount
+  # alert_email_to                    = var.alert_email_to
+  # alert_email_from                  = var.alert_email_from
+  # alerter_cpu                       = var.alerter_cpu
+  # alerter_memory                    = var.alerter_memory
 
   indexer_worker_pool_name      = var.indexer_worker_pool_name
   indexer_service_account_email = module.iam.indexer_service_account_email
@@ -152,29 +156,31 @@ module "cloud_run" {
   depends_on = [module.iam]
 }
 
-module "pubsub" {
-  source = "../../modules/pubsub"
-
-  project_id     = var.project_id
-  project_number = data.google_project.current.number
-  labels         = var.common_labels
-
-  events_bucket_name  = module.storage.events_bucket_name
-  event_object_prefix = var.event_object_prefix
-
-  alerter_push_endpoint             = module.cloud_run.alerter_push_endpoint
-  pubsub_push_service_account_email = module.iam.pubsub_push_service_account_email
-
-  event_topic_name              = var.event_topic_name
-  dead_letter_topic_name        = var.dead_letter_topic_name
-  alert_subscription_name       = var.alert_subscription_name
-  dead_letter_subscription_name = var.dead_letter_subscription_name
-
-  pubsub_ack_deadline_seconds    = var.pubsub_ack_deadline_seconds
-  pubsub_max_delivery_attempts   = var.pubsub_max_delivery_attempts
-  pubsub_minimum_backoff_seconds = var.pubsub_minimum_backoff_seconds
-  pubsub_maximum_backoff_seconds = var.pubsub_maximum_backoff_seconds
-}
+# Alerting disabled. Keeping the full module call commented makes restoration
+# explicit while removing its resources from Terraform's desired state.
+# module "pubsub" {
+#   source = "../../modules/pubsub"
+#
+#   project_id     = var.project_id
+#   project_number = data.google_project.current.number
+#   labels         = var.common_labels
+#
+#   events_bucket_name  = module.storage.events_bucket_name
+#   event_object_prefix = var.event_object_prefix
+#
+#   alerter_push_endpoint             = module.cloud_run.alerter_push_endpoint
+#   pubsub_push_service_account_email = module.iam.pubsub_push_service_account_email
+#
+#   event_topic_name              = var.event_topic_name
+#   dead_letter_topic_name        = var.dead_letter_topic_name
+#   alert_subscription_name       = var.alert_subscription_name
+#   dead_letter_subscription_name = var.dead_letter_subscription_name
+#
+#   pubsub_ack_deadline_seconds    = var.pubsub_ack_deadline_seconds
+#   pubsub_max_delivery_attempts   = var.pubsub_max_delivery_attempts
+#   pubsub_minimum_backoff_seconds = var.pubsub_minimum_backoff_seconds
+#   pubsub_maximum_backoff_seconds = var.pubsub_maximum_backoff_seconds
+# }
 
 module "edge" {
   source = "../../modules/edge"
@@ -202,17 +208,22 @@ module "edge" {
 module "monitoring" {
   source = "../../modules/monitoring"
 
-  project_id     = var.project_id
-  environment    = var.environment
-  domain_name    = var.domain_name
-  alert_email_to = var.alert_email_from
+  project_id  = var.project_id
+  environment = var.environment
+  domain_name = var.domain_name
+  # The Gmail sender belonged to the alerter. Keep general infrastructure
+  # notifications routed to the existing alert recipient.
+  # alert_email_to = var.alert_email_from
+  alert_email_to = var.alert_email_to
 
   url_map_name             = module.edge.url_map_name
   api_backend_service_name = module.edge.api_backend_service_name
   api_service_name         = module.cloud_run.api_service_name
 
-  dead_letter_subscription_name = module.pubsub.dead_letter_subscription_name
-  alert_subscription_name       = module.pubsub.alert_subscription_name
+  # Alerting disabled; the corresponding monitoring policies are commented in
+  # the monitoring module.
+  # dead_letter_subscription_name = module.pubsub.dead_letter_subscription_name
+  # alert_subscription_name       = module.pubsub.alert_subscription_name
 
   indexer_worker_pool_name = module.cloud_run.indexer_worker_pool_name
 }
@@ -234,16 +245,16 @@ module "cloud_build" {
   frontend_bucket_name   = module.storage.frontend_bucket_name
 
   api_service_name         = module.cloud_run.api_service_name
-  alerter_service_name     = module.cloud_run.alerter_service_name
   indexer_worker_pool_name = module.cloud_run.indexer_worker_pool_name
+  # alerter_service_name = module.cloud_run.alerter_service_name
 
   api_service_account_name     = module.iam.api_service_account_name
-  alerter_service_account_name = module.iam.alerter_service_account_name
   indexer_service_account_name = module.iam.indexer_service_account_name
-  name_prefix                  = var.name_prefix
-  public_url                   = "https://${var.domain_name}"
+  # alerter_service_account_name = module.iam.alerter_service_account_name
+  name_prefix = var.name_prefix
+  public_url  = "https://${var.domain_name}"
 
-  alerter_url        = module.cloud_run.alerter_service_uri
+  # alerter_url = module.cloud_run.alerter_service_uri
   events_bucket_name = module.storage.events_bucket_name
   state_bucket_name  = module.storage.state_bucket_name
 

@@ -43,10 +43,11 @@ variable "rpc_secret_id" {
   type        = string
 }
 
-variable "gmail_secret_id" {
-  description = "Gmail secret ID. Pass the secrets module output."
-  type        = string
-}
+# Alerting disabled; keep the variable for easy restoration.
+# variable "gmail_secret_id" {
+#   description = "Gmail secret ID. Pass the secrets module output."
+#   type        = string
+# }
 
 variable "chain_id" {
   description = "Expected Ethereum chain ID, consumed by both the API and the indexer."
@@ -125,72 +126,73 @@ variable "api_memory" {
 }
 
 
-variable "alerter_service_name" {
-  description = "Private Cloud Run alerter service name."
-  type        = string
-}
-
-variable "alerter_service_account_email" {
-  description = "Attached alerter runtime identity. Pass the IAM module output."
-  type        = string
-}
-
-variable "pubsub_push_service_account_email" {
-  description = "Push identity receiving roles/run.invoker on the alerter."
-  type        = string
-}
-
-variable "alerter_min_instances" {
-  description = "Minimum alerter instances."
-  type        = number
-}
-
-variable "alerter_max_instances" {
-  description = "Maximum alerter instances."
-  type        = number
-}
-
-variable "alerter_timeout_seconds" {
-  description = "Cloud Run request timeout for the alerter."
-  type        = number
-}
-
-variable "alert_minimum_amount" {
-  description = "Minimum transfer amount generating an email, as a decimal string."
-  type        = string
-}
-
-variable "alert_email_to" {
-  description = "Alert recipient. Injected outside tfvars via TF_VAR_alert_email_to."
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(trimspace(var.alert_email_to)) > 0
-    error_message = "alert_email_to must be non-empty; the alerter exits at startup without it."
-  }
-}
-
-variable "alert_email_from" {
-  description = "Gmail address owning the app password. Injected outside tfvars."
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(trimspace(var.alert_email_from)) > 0
-    error_message = "alert_email_from must be non-empty; the alerter exits at startup without it."
-  }
-}
-
-variable "alerter_cpu" {
-  description = "Alerter CPU limit."
-  type        = string
-}
-
-variable "alerter_memory" {
-  description = "Alerter memory limit."
-  type        = string
-}
+# Alerting disabled; keep the variables for easy restoration.
+# variable "alerter_service_name" {
+#   description = "Private Cloud Run alerter service name."
+#   type        = string
+# }
+#
+# variable "alerter_service_account_email" {
+#   description = "Attached alerter runtime identity. Pass the IAM module output."
+#   type        = string
+# }
+#
+# variable "pubsub_push_service_account_email" {
+#   description = "Push identity receiving roles/run.invoker on the alerter."
+#   type        = string
+# }
+#
+# variable "alerter_min_instances" {
+#   description = "Minimum alerter instances."
+#   type        = number
+# }
+#
+# variable "alerter_max_instances" {
+#   description = "Maximum alerter instances."
+#   type        = number
+# }
+#
+# variable "alerter_timeout_seconds" {
+#   description = "Cloud Run request timeout for the alerter."
+#   type        = number
+# }
+#
+# variable "alert_minimum_amount" {
+#   description = "Minimum transfer amount generating an email, as a decimal string."
+#   type        = string
+# }
+#
+# variable "alert_email_to" {
+#   description = "Alert recipient. Injected outside tfvars via TF_VAR_alert_email_to."
+#   type        = string
+#   sensitive   = true
+#
+#   validation {
+#     condition     = length(trimspace(var.alert_email_to)) > 0
+#     error_message = "alert_email_to must be non-empty; the alerter exits at startup without it."
+#   }
+# }
+#
+# variable "alert_email_from" {
+#   description = "Gmail address owning the app password. Injected outside tfvars."
+#   type        = string
+#   sensitive   = true
+#
+#   validation {
+#     condition     = length(trimspace(var.alert_email_from)) > 0
+#     error_message = "alert_email_from must be non-empty; the alerter exits at startup without it."
+#   }
+# }
+#
+# variable "alerter_cpu" {
+#   description = "Alerter CPU limit."
+#   type        = string
+# }
+#
+# variable "alerter_memory" {
+#   description = "Alerter memory limit."
+#   type        = string
+# }
 
 
 variable "indexer_worker_pool_name" {

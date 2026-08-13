@@ -48,10 +48,11 @@ variable "api_service_name" {
   type        = string
 }
 
-variable "alerter_service_name" {
-  description = "Cloud Run alerter service CD may update."
-  type        = string
-}
+# Alerting disabled; keep the variable for easy restoration.
+# variable "alerter_service_name" {
+#   description = "Cloud Run alerter service CD may update."
+#   type        = string
+# }
 
 variable "indexer_worker_pool_name" {
   description = "Worker Pool CD may update."
@@ -63,10 +64,10 @@ variable "api_service_account_name" {
   type        = string
 }
 
-variable "alerter_service_account_name" {
-  description = "projects/<project>/serviceAccounts/<email> form for the actAs binding."
-  type        = string
-}
+# variable "alerter_service_account_name" {
+#   description = "projects/<project>/serviceAccounts/<email> form for the actAs binding."
+#   type        = string
+# }
 
 variable "indexer_service_account_name" {
   description = "projects/<project>/serviceAccounts/<email> form for the actAs binding."
@@ -130,10 +131,10 @@ variable "image_name" {
   default     = "stablecoin-whale-monitor"
 }
 
-variable "alerter_url" {
-  description = "Direct run.app URL of the alerter. The smoke test asserts it rejects unauthenticated callers."
-  type        = string
-}
+# variable "alerter_url" {
+#   description = "Direct run.app URL of the alerter. The smoke test asserts it rejects unauthenticated callers."
+#   type        = string
+# }
 
 variable "events_bucket_name" {
   description = "Events bucket. The smoke test asserts its lifecycle rule and public access prevention."

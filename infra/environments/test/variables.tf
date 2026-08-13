@@ -112,11 +112,12 @@ variable "api_service_name" {
   default     = "swm-api-test"
 }
 
-variable "alerter_service_name" {
-  description = "Private Cloud Run alerter service name."
-  type        = string
-  default     = "swm-alerter-test"
-}
+# Alerting disabled; keep the variable for easy restoration.
+# variable "alerter_service_name" {
+#   description = "Private Cloud Run alerter service name."
+#   type        = string
+#   default     = "swm-alerter-test"
+# }
 
 variable "indexer_worker_pool_name" {
   description = "Cloud Run Worker Pool name for the continuous indexer."
@@ -136,17 +137,17 @@ variable "indexer_service_account_id" {
   default     = "swm-test-indexer"
 }
 
-variable "alerter_service_account_id" {
-  description = "Account ID for the alerter runtime service account."
-  type        = string
-  default     = "swm-test-alerter"
-}
-
-variable "pubsub_push_service_account_id" {
-  description = "Account ID used by Pub/Sub for authenticated push delivery."
-  type        = string
-  default     = "swm-test-pubsub-push"
-}
+# variable "alerter_service_account_id" {
+#   description = "Account ID for the alerter runtime service account."
+#   type        = string
+#   default     = "swm-test-alerter"
+# }
+#
+# variable "pubsub_push_service_account_id" {
+#   description = "Account ID used by Pub/Sub for authenticated push delivery."
+#   type        = string
+#   default     = "swm-test-pubsub-push"
+# }
 
 
 variable "rpc_secret_id" {
@@ -155,11 +156,11 @@ variable "rpc_secret_id" {
   default     = "swm-rpc-url"
 }
 
-variable "gmail_secret_id" {
-  description = "Secret Manager secret ID containing the Gmail app password."
-  type        = string
-  default     = "swm-gmail-app-password"
-}
+# variable "gmail_secret_id" {
+#   description = "Secret Manager secret ID containing the Gmail app password."
+#   type        = string
+#   default     = "swm-gmail-app-password"
+# }
 
 variable "chain_id" {
   description = "Expected Ethereum chain ID."
@@ -347,13 +348,14 @@ variable "api_memory" {
   default     = "512Mi"
 }
 
-variable "alert_minimum_amount" {
-  description = "Minimum transfer amount that generates an email alert, represented as a decimal string."
-  type        = string
-  default     = "1000000"
-
-
-}
+# Alerting disabled; keep the service settings for easy restoration.
+# variable "alert_minimum_amount" {
+#   description = "Minimum transfer amount that generates an email alert, represented as a decimal string."
+#   type        = string
+#   default     = "1000000"
+#
+#
+# }
 
 variable "alert_email_to" {
   description = "Email address receiving whale-transfer alerts."
@@ -362,42 +364,42 @@ variable "alert_email_to" {
   sensitive   = true
 }
 
-variable "alert_email_from" {
-  description = "Gmail address owning the app password. It may remain empty until the alerter is deployed."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "alerter_min_instances" {
-  description = "Minimum alerter instances."
-  type        = number
-  default     = 0
-}
-
-variable "alerter_max_instances" {
-  description = "Maximum alerter instances."
-  type        = number
-  default     = 1
-}
-
-variable "alerter_timeout_seconds" {
-  description = "Cloud Run alerter request timeout in seconds."
-  type        = number
-  default     = 60
-}
-
-variable "alerter_cpu" {
-  description = "Cloud Run alerter CPU limit."
-  type        = string
-  default     = "1"
-}
-
-variable "alerter_memory" {
-  description = "Cloud Run alerter memory limit."
-  type        = string
-  default     = "512Mi"
-}
+# variable "alert_email_from" {
+#   description = "Gmail address owning the app password. It may remain empty until the alerter is deployed."
+#   type        = string
+#   default     = ""
+#   sensitive   = true
+# }
+#
+# variable "alerter_min_instances" {
+#   description = "Minimum alerter instances."
+#   type        = number
+#   default     = 0
+# }
+#
+# variable "alerter_max_instances" {
+#   description = "Maximum alerter instances."
+#   type        = number
+#   default     = 1
+# }
+#
+# variable "alerter_timeout_seconds" {
+#   description = "Cloud Run alerter request timeout in seconds."
+#   type        = number
+#   default     = 60
+# }
+#
+# variable "alerter_cpu" {
+#   description = "Cloud Run alerter CPU limit."
+#   type        = string
+#   default     = "1"
+# }
+#
+# variable "alerter_memory" {
+#   description = "Cloud Run alerter memory limit."
+#   type        = string
+#   default     = "512Mi"
+# }
 
 variable "indexer_cpu" {
   description = "Cloud Run Worker Pool indexer CPU limit."
@@ -411,53 +413,54 @@ variable "indexer_memory" {
   default     = "512Mi"
 }
 
-variable "event_topic_name" {
-  description = "Pub/Sub topic receiving Cloud Storage event notifications."
-  type        = string
-  default     = "swm-events-test"
-}
-
-variable "dead_letter_topic_name" {
-  description = "Pub/Sub dead-letter topic."
-  type        = string
-  default     = "swm-alerts-dlq-test"
-}
-
-variable "alert_subscription_name" {
-  description = "Authenticated Pub/Sub push subscription for the alerter."
-  type        = string
-  default     = "swm-alerts-push-test"
-}
-
-variable "dead_letter_subscription_name" {
-  description = "Pull subscription used to inspect dead-lettered messages."
-  type        = string
-  default     = "swm-alerts-dlq-catch-test"
-}
-
-variable "pubsub_ack_deadline_seconds" {
-  description = "Pub/Sub push acknowledgment deadline in seconds."
-  type        = number
-  default     = 30
-}
-
-variable "pubsub_max_delivery_attempts" {
-  description = "Maximum delivery attempts before forwarding a message to the dead-letter topic."
-  type        = number
-  default     = 5
-}
-
-variable "pubsub_minimum_backoff_seconds" {
-  description = "Minimum Pub/Sub retry backoff in seconds."
-  type        = number
-  default     = 10
-}
-
-variable "pubsub_maximum_backoff_seconds" {
-  description = "Maximum Pub/Sub retry backoff in seconds."
-  type        = number
-  default     = 600
-}
+# Alerting disabled; keep the dedicated Pub/Sub settings for restoration.
+# variable "event_topic_name" {
+#   description = "Pub/Sub topic receiving Cloud Storage event notifications."
+#   type        = string
+#   default     = "swm-events-test"
+# }
+#
+# variable "dead_letter_topic_name" {
+#   description = "Pub/Sub dead-letter topic."
+#   type        = string
+#   default     = "swm-alerts-dlq-test"
+# }
+#
+# variable "alert_subscription_name" {
+#   description = "Authenticated Pub/Sub push subscription for the alerter."
+#   type        = string
+#   default     = "swm-alerts-push-test"
+# }
+#
+# variable "dead_letter_subscription_name" {
+#   description = "Pull subscription used to inspect dead-lettered messages."
+#   type        = string
+#   default     = "swm-alerts-dlq-catch-test"
+# }
+#
+# variable "pubsub_ack_deadline_seconds" {
+#   description = "Pub/Sub push acknowledgment deadline in seconds."
+#   type        = number
+#   default     = 30
+# }
+#
+# variable "pubsub_max_delivery_attempts" {
+#   description = "Maximum delivery attempts before forwarding a message to the dead-letter topic."
+#   type        = number
+#   default     = 5
+# }
+#
+# variable "pubsub_minimum_backoff_seconds" {
+#   description = "Minimum Pub/Sub retry backoff in seconds."
+#   type        = number
+#   default     = 10
+# }
+#
+# variable "pubsub_maximum_backoff_seconds" {
+#   description = "Maximum Pub/Sub retry backoff in seconds."
+#   type        = number
+#   default     = 600
+# }
 
 variable "event_object_prefix" {
   description = "Cloud Storage prefix that produces Pub/Sub event notifications and receives lifecycle deletion."

@@ -9,13 +9,13 @@ locals {
     "cloudbuild.googleapis.com",           # Cloud Build
     "run.googleapis.com",                  # Cloud Run
     "storage.googleapis.com",              # Cloud Storage
-    "pubsub.googleapis.com",               # Pub/Sub
-    "secretmanager.googleapis.com",        # Secret Manager
-    "compute.googleapis.com",              # Compute Engine
-    "certificatemanager.googleapis.com",   # Certificate Manager
-    "dns.googleapis.com",                  # Cloud DNS
-    "logging.googleapis.com",              # Cloud Logging
-    "monitoring.googleapis.com"            # Cloud Monitoring
+    # "pubsub.googleapis.com",             # Pub/Sub (alerting disabled)
+    "secretmanager.googleapis.com",      # Secret Manager
+    "compute.googleapis.com",            # Compute Engine
+    "certificatemanager.googleapis.com", # Certificate Manager
+    "dns.googleapis.com",                # Cloud DNS
+    "logging.googleapis.com",            # Cloud Logging
+    "monitoring.googleapis.com"          # Cloud Monitoring
   ]
 }
 

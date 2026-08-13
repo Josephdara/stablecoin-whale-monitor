@@ -15,15 +15,16 @@ variable "indexer_service_account_id" {
   type        = string
 }
 
-variable "alerter_service_account_id" {
-  description = "Account ID for the alerter runtime service account."
-  type        = string
-}
-
-variable "pubsub_push_service_account_id" {
-  description = "Account ID used by Pub/Sub for authenticated push delivery."
-  type        = string
-}
+# Alerting disabled; keep the variables for easy restoration.
+# variable "alerter_service_account_id" {
+#   description = "Account ID for the alerter runtime service account."
+#   type        = string
+# }
+#
+# variable "pubsub_push_service_account_id" {
+#   description = "Account ID used by Pub/Sub for authenticated push delivery."
+#   type        = string
+# }
 
 
 variable "events_bucket_name" {
@@ -41,7 +42,7 @@ variable "rpc_secret_id" {
   type        = string
 }
 
-variable "gmail_secret_id" {
-  description = "Gmail secret ID. passed from the secrets module output."
-  type        = string
-}
+# variable "gmail_secret_id" {
+#   description = "Gmail secret ID. passed from the secrets module output."
+#   type        = string
+# }

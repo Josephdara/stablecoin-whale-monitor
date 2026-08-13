@@ -21,12 +21,12 @@ storage_force_destroy  = true
 event_retention_days   = 7
 
 api_service_name               = "swm-api-test"
-alerter_service_name           = "swm-alerter-test"
+# alerter_service_name           = "swm-alerter-test"
 indexer_worker_pool_name       = "swm-indexer-test"
 api_service_account_id         = "swm-test-api"
 indexer_service_account_id     = "swm-test-indexer"
-alerter_service_account_id     = "swm-test-alerter"
-pubsub_push_service_account_id = "swm-test-pubsub-push"
+# alerter_service_account_id     = "swm-test-alerter"
+# pubsub_push_service_account_id = "swm-test-pubsub-push"
 
 chain_id                = 1
 start_block             = 25638000
@@ -58,23 +58,24 @@ api_timeout_seconds     = 60
 api_cpu                 = "1"
 api_memory              = "512Mi"
 
-alert_minimum_amount    = "1000000"
-alerter_min_instances   = 0
-alerter_max_instances   = 1
-alerter_timeout_seconds = 60
-alerter_cpu             = "1"
-alerter_memory          = "512Mi"
+# Alerting disabled; keep its settings for easy restoration.
+# alert_minimum_amount    = "1000000"
+# alerter_min_instances   = 0
+# alerter_max_instances   = 1
+# alerter_timeout_seconds = 60
+# alerter_cpu             = "1"
+# alerter_memory          = "512Mi"
 indexer_cpu             = "1"
 indexer_memory          = "512Mi"
 
-event_topic_name               = "swm-events-test"
-dead_letter_topic_name         = "swm-alerts-dlq-test"
-alert_subscription_name        = "swm-alerts-push-test"
-dead_letter_subscription_name  = "swm-alerts-dlq-catch-test"
-pubsub_ack_deadline_seconds    = 30
-pubsub_max_delivery_attempts   = 5
-pubsub_minimum_backoff_seconds = 10
-pubsub_maximum_backoff_seconds = 600
+# event_topic_name               = "swm-events-test"
+# dead_letter_topic_name         = "swm-alerts-dlq-test"
+# alert_subscription_name        = "swm-alerts-push-test"
+# dead_letter_subscription_name  = "swm-alerts-dlq-catch-test"
+# pubsub_ack_deadline_seconds    = 30
+# pubsub_max_delivery_attempts   = 5
+# pubsub_minimum_backoff_seconds = 10
+# pubsub_maximum_backoff_seconds = 600
 event_object_prefix            = "ethereum/ranges/"
 
 domain_name                     = "swm.example.com"
@@ -87,5 +88,6 @@ api_security_policy_name        = "swm-api-security-test"
 api_rate_limit_requests         = 60
 api_rate_limit_interval_seconds = 60
 
-alert_email_to         = "recipient@example.com"
-alert_email_from       = "sender@gmail.com"
+# alert_email_to remains active as the recipient for API/indexer monitoring.
+alert_email_to = "recipient@example.com"
+# alert_email_from       = "sender@gmail.com"

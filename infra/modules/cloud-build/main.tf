@@ -114,7 +114,9 @@ resource "google_storage_bucket_iam_member" "cd_frontend_bucket_reader" {
 
 
 resource "google_cloud_run_v2_service_iam_member" "cd_services" {
-  for_each = toset([var.api_service_name, var.alerter_service_name])
+  # Alerting disabled; keep the former target list for easy restoration.
+  # for_each = toset([var.api_service_name, var.alerter_service_name])
+  for_each = toset([var.api_service_name])
 
   project  = var.project_id
   location = var.region
@@ -150,8 +152,8 @@ resource "google_cloud_run_v2_worker_pool_iam_member" "cd_indexer" {
 
 resource "google_service_account_iam_member" "cd_act_as" {
   for_each = {
-    api     = var.api_service_account_name
-    alerter = var.alerter_service_account_name
+    api = var.api_service_account_name
+    # alerter = var.alerter_service_account_name
     indexer = var.indexer_service_account_name
   }
 
@@ -234,12 +236,12 @@ resource "google_cloudbuild_trigger" "cd" {
     _ARTIFACTS_BUCKET = google_storage_bucket.artifacts.name
     _FRONTEND_BUCKET  = var.frontend_bucket_name
     _API_SERVICE      = var.api_service_name
-    _ALERTER_SERVICE  = var.alerter_service_name
-    _INDEXER_POOL     = var.indexer_worker_pool_name
-    _PUBLIC_URL       = var.public_url
-    _ALERTER_URL      = var.alerter_url
-    _EVENTS_BUCKET    = var.events_bucket_name
-    _STATE_BUCKET     = var.state_bucket_name
-    _TF_STATE_BUCKET  = var.terraform_state_bucket_name
+    # _ALERTER_SERVICE  = var.alerter_service_name
+    _INDEXER_POOL = var.indexer_worker_pool_name
+    _PUBLIC_URL   = var.public_url
+    # _ALERTER_URL      = var.alerter_url
+    _EVENTS_BUCKET   = var.events_bucket_name
+    _STATE_BUCKET    = var.state_bucket_name
+    _TF_STATE_BUCKET = var.terraform_state_bucket_name
   }
 }
