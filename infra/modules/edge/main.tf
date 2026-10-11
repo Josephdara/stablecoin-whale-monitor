@@ -179,9 +179,12 @@ resource "google_compute_url_map" "main" {
       service = google_compute_backend_bucket.assets.id
     }
 
-    path_rule {
-      paths   = ["/api", "/api/*"]
-      service = google_compute_backend_service.api.id
+    dynamic "path_rule" {
+      for_each = var.services_paused ? [] : [1]
+      content {
+        paths   = ["/api", "/api/*"]
+        service = google_compute_backend_service.api.id
+      }
     }
   }
 }

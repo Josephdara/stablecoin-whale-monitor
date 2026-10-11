@@ -16,6 +16,8 @@ substitutions:
   _EVENTS_BUCKET: swm-gcp-test-v2-events
   _STATE_BUCKET: swm-gcp-test-v2-app-state
   _TF_STATE_BUCKET: swm-gcp-state-v2
+  # Paused until 2026-10-25. Not a trigger substitution so older tags can still roll back.
+  _SERVICES_PAUSED: "true"
 
 steps:
   - id: fetch-release
@@ -80,6 +82,10 @@ steps:
       - -c
       - |
         set -e
+        if [ "${_SERVICES_PAUSED}" = "true" ]; then
+          echo "Services paused: skipping API health check"
+          exit 0
+        fi
         for i in $$(seq 1 10); do
           if curl -fsS ${_PUBLIC_URL}/api/health | grep -q '"status":"ok"'; then
             echo "API healthy after deploy"
@@ -152,7 +158,9 @@ steps:
           echo "${_INDEXER_POOL} is running $$POOL_IMAGE, expected $$DIGEST" >&2; exit 1; }
         echo "indexer worker pool on $$DIGEST"
         curl -fsS -o /dev/null ${_PUBLIC_URL}/
-        curl -fsS ${_PUBLIC_URL}/api/health | grep -q '"chainId":1'
+        if [ "${_SERVICES_PAUSED}" != "true" ]; then
+          curl -fsS ${_PUBLIC_URL}/api/health | grep -q '"chainId":1'
+        fi
 
         # Pass the trigger's targets explicitly. Invoked bare, the script falls
         # back to its own hardcoded test defaults, so a prod deploy would smoke
@@ -161,6 +169,7 @@ steps:
         # Alerting disabled; keep the former assignment for easy restoration.
         # ALERTER_URL="${_ALERTER_URL}" \
         PUBLIC_URL="${_PUBLIC_URL}" \
+        SERVICES_PAUSED="${_SERVICES_PAUSED}" \
         PROJECT_ID="${PROJECT_ID}" \
         EVENTS_BUCKET="${_EVENTS_BUCKET}" \
         STATE_BUCKET="${_STATE_BUCKET}" \

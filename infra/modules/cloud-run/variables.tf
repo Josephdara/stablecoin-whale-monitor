@@ -294,3 +294,9 @@ variable "indexer_memory" {
   description = "Indexer memory limit."
   type        = string
 }
+
+variable "services_paused" {
+  description = "Takes the API and indexer offline without destroying them: the indexer and the API runs no instances."
+  type        = bool
+  default     = false
+}

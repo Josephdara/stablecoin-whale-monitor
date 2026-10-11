@@ -780,6 +780,31 @@ gcloud builds triggers run "${NAME_PREFIX}-cd" \
 Review and approve the resulting pending build. The release manifest pins both
 the image digest and frontend archive checksum, so they roll back together.
 
+### Pausing the API and indexer
+
+Pausing takes both services offline without destroying anything, while the
+frontend keeps serving an offline notice. Three switches control it:
+
+| Switch | File |
+| --- | --- |
+| `services_paused` local | `infra/environments/test/main.tf` |
+| `SERVICES_PAUSED` constant | `frontend/app/page.tsx` |
+| `_SERVICES_PAUSED` substitution | `cloudbuild/cloudbuild-cd.yaml` |
+
+To pause, set all three to `true`, apply Terraform as in
+[Infrastructure change](#infrastructure-change), then cut a release. Terraform
+scales the indexer to zero instances, drops the API's warm minimum, stops
+routing `/api` (those paths now 404 from the frontend bucket), and disables the
+API and indexer alert policies. CD still rolls the image forward on both
+services, skips the API health checks, and asserts that `/api` is unrouted.
+
+To resume, set all three to `false` and apply Terraform first. The indexer
+continues from its checkpoint and replays the gap back to back, without its
+poll sleep, until it reaches the confirmed head. Wait until
+`/api/health` reports `"status":"ok"` with a small `checkpointAgeSeconds`
+before cutting the release; the smoke test fails a checkpoint older than
+180 seconds.
+
 ### Teardown
 
 Review the destroy plan carefully:

@@ -2,6 +2,11 @@ data "google_project" "current" {
   project_id = var.project_id
 }
 
+# Paused until 2026-10-25. See "Pausing the API and indexer" in docs/RUNBOOK.md.
+locals {
+  services_paused = true
+}
+
 module "project-services" {
   source     = "../../modules/project-services"
   project_id = var.project_id
@@ -153,6 +158,8 @@ module "cloud_run" {
   indexer_cpu                   = var.indexer_cpu
   indexer_memory                = var.indexer_memory
 
+  services_paused = local.services_paused
+
   depends_on = [module.iam]
 }
 
@@ -203,6 +210,8 @@ module "edge" {
   api_security_policy_name        = var.api_security_policy_name
   api_rate_limit_requests         = var.api_rate_limit_requests
   api_rate_limit_interval_seconds = var.api_rate_limit_interval_seconds
+
+  services_paused = local.services_paused
 }
 
 module "monitoring" {
@@ -226,6 +235,8 @@ module "monitoring" {
   # alert_subscription_name       = module.pubsub.alert_subscription_name
 
   indexer_worker_pool_name = module.cloud_run.indexer_worker_pool_name
+
+  services_paused = local.services_paused
 }
 
 module "cloud_build" {

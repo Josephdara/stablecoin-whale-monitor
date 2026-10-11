@@ -54,3 +54,4 @@ docs/*
 !docs/V1.md
 !docs/PLAYBOOK.md
 !docs/RUNBOOK.md
+python-fetch/

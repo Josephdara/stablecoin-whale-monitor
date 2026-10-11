@@ -69,3 +69,8 @@ variable "api_rate_limit_interval_seconds" {
   type        = number
 }
 
+variable "services_paused" {
+  description = "Stops routing /api to the API while it is paused. Those paths fall through to the frontend bucket and return 404."
+  type        = bool
+  default     = false
+}

@@ -42,6 +42,7 @@ resource "google_monitoring_alert_policy" "uptime" {
   project      = var.project_id
   display_name = "SWM API uptime failing"
   combiner     = "OR"
+  enabled      = !var.services_paused
 
   conditions {
     display_name = "Uptime check failing"
@@ -65,6 +66,7 @@ resource "google_monitoring_alert_policy" "api_5xx" {
   project      = var.project_id
   display_name = "SWM API 5xx responses (${var.environment})"
   combiner     = "OR"
+  enabled      = !var.services_paused
 
   conditions {
     display_name = "5xx request rate high"
@@ -112,6 +114,7 @@ resource "google_monitoring_alert_policy" "api_degraded_health" {
   project      = var.project_id
   display_name = "SWM API persistently degraded warning (${var.environment})"
   combiner     = "OR"
+  enabled      = !var.services_paused
 
   conditions {
     display_name = "Health remains degraded"
@@ -137,7 +140,7 @@ resource "google_monitoring_alert_policy" "api_latency" {
   project      = var.project_id
   display_name = "SWM API high latency p99 (${var.environment})"
   combiner     = "OR"
-  enabled      = true
+  enabled      = !var.services_paused
 
   conditions {
     display_name = "p99 latency above threshold"
@@ -214,6 +217,7 @@ resource "google_monitoring_alert_policy" "indexer_instance" {
   project      = var.project_id
   display_name = "SWM indexer worker pool down (${var.environment})"
   combiner     = "OR"
+  enabled      = !var.services_paused
 
   conditions {
     display_name = "Active instance count is 0"
@@ -252,6 +256,7 @@ resource "google_monitoring_alert_policy" "indexer_stalled" {
   project      = var.project_id
   display_name = "SWM indexer loop stalled (${var.environment})"
   combiner     = "OR"
+  enabled      = !var.services_paused
 
   conditions {
     display_name = "No committed ranges or completed cycles"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 type Transfer = {
   chain: "ethereum";
@@ -60,6 +60,8 @@ const EMPTY_FILTERS: Filters = { token: "", minimumAmount: "", address: "" };
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const AMOUNT_PATTERN = /^[0-9]+(?:\.[0-9]{1,6})?$/;
+// Paused until 2026-10-25 along with the API and indexer.
+const SERVICES_PAUSED = true;
 
 function apiUrl(path: string) {
   return new URL(`${API_BASE_URL}${path}`, window.location.origin);
@@ -93,6 +95,29 @@ async function fetchTransfersPage(cursor: string, filters: Filters): Promise<Tra
 }
 
 export default function Home() {
+  return SERVICES_PAUSED ? <Offline /> : <Monitor />;
+}
+
+function Offline() {
+  return (
+    <main>
+      <Hero />
+      <section className="offlineBanner" role="status">
+        <span className="offlineEmoji" aria-hidden="true">🐋</span>
+        <div>
+          <p className="eyebrow">Gone fishing</p>
+          <strong>The whales are migrating, and so are we.</strong>
+          <span>
+            The indexer and API are switched off until October 25. No point serving stale
+            splashes, so the live feed is taking a break too. See you back in the deep end!
+          </span>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function Monitor() {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -272,18 +297,11 @@ export default function Home() {
 
   return (
     <main>
-      <header className="hero">
-        <div>
-          <p className="eyebrow">Ethereum mainnet</p>
-          <h1>Stablecoin Whale Monitor</h1>
-          <p className="subtitle">
-            Locally indexed USDC and USDT transfers, straight from the chain.
-          </p>
-        </div>
+      <Hero>
         <button type="button" onClick={() => void loadTransfers("", true)} disabled={loading}>
           {loading ? "Loading…" : "Reload data"}
         </button>
-      </header>
+      </Hero>
 
       <section className={`healthbar level-${healthLevel}`} aria-label="Indexer status">
         <span className="healthBadge">{HEALTH_LABEL[healthLevel]}</span>
@@ -460,6 +478,21 @@ export default function Home() {
         were already published are not rewritten.
       </p>
     </main>
+  );
+}
+
+function Hero({ children }: { children?: ReactNode }) {
+  return (
+    <header className="hero">
+      <div>
+        <p className="eyebrow">Ethereum mainnet</p>
+        <h1>Stablecoin Whale Monitor</h1>
+        <p className="subtitle">
+          Locally indexed USDC and USDT transfers, straight from the chain.
+        </p>
+      </div>
+      {children}
+    </header>
   );
 }
 

@@ -79,3 +79,9 @@ variable "api_degraded_duration_seconds" {
   type        = string
   default     = "600s"
 }
+
+variable "services_paused" {
+  description = "Disables the API and indexer alert policies while those services are deliberately offline."
+  type        = bool
+  default     = false
+}

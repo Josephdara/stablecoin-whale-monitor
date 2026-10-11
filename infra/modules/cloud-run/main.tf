@@ -4,6 +4,8 @@ locals {
     GCS_EVENTS_BUCKET = var.events_bucket_name
     GCS_STATE_BUCKET  = var.state_bucket_name
   }
+
+  api_min_instances = var.services_paused ? 0 : var.api_min_instances
 }
 
 
@@ -70,7 +72,7 @@ resource "google_cloud_run_v2_worker_pool" "indexer" {
   }
 
   scaling {
-    manual_instance_count = 1
+    manual_instance_count = var.services_paused ? 0 : 1
   }
   # CD owns the deployed image; Terraform owns every other attribute. This is an ownership boundary, not drift suppression: 
   # it is what allows the deploy pipeline to update revisions without ever holding Terraform state access application_image is a bootstrap value only.
@@ -203,7 +205,7 @@ resource "google_cloud_run_v2_service" "api" {
   labels              = var.labels
 
   scaling {
-    min_instance_count = var.api_min_instances
+    min_instance_count = local.api_min_instances
     max_instance_count = var.api_max_instances
   }
 
@@ -213,7 +215,7 @@ resource "google_cloud_run_v2_service" "api" {
     timeout                          = "${var.api_timeout_seconds}s"
 
     scaling {
-      min_instance_count = var.api_min_instances
+      min_instance_count = local.api_min_instances
       max_instance_count = var.api_max_instances
     }
 

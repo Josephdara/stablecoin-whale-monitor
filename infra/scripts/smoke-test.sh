@@ -19,6 +19,7 @@ EVENT_PREFIX="${EVENT_PREFIX:-ethereum/ranges/}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 MAX_CHECKPOINT_AGE="${MAX_CHECKPOINT_AGE:-180}"
 ADVANCE_WAIT="${ADVANCE_WAIT:-60}"
+SERVICES_PAUSED="${SERVICES_PAUSED:-false}"
 
 pass=0
 fail=0
@@ -94,30 +95,35 @@ fi
 
 section "API"
 
-health=$(curl -sS "$PUBLIC_URL/api/health")
-assert_contains "health reports mainnet" '"chainId":1' "$health"
-assert_contains "health reports ok" '"status":"ok"' "$health"
-
-age=$(printf '%s' "$health" | grep -o '"checkpointAgeSeconds":[0-9]*' | cut -d: -f2)
-if [ -n "$age" ] && [ "$age" -le "$MAX_CHECKPOINT_AGE" ]; then
-  ok "checkpoint age is bounded (${age}s <= ${MAX_CHECKPOINT_AGE}s)"
+if [ "$SERVICES_PAUSED" = "true" ]; then
+  paused_code=$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_URL/api/health")
+  assert "paused API is unrouted (/api/health returns 404)" "404" "$paused_code"
 else
-  bad "checkpoint age is bounded (got '${age:-none}s')"
-fi
+  health=$(curl -sS "$PUBLIC_URL/api/health")
+  assert_contains "health reports mainnet" '"chainId":1' "$health"
+  assert_contains "health reports ok" '"status":"ok"' "$health"
 
-# Proves the worker pool is live without needing bucket read access.
-block_before=$(printf '%s' "$health" | grep -o '"lastProcessedBlock":[0-9]*' | cut -d: -f2)
-printf '  ....  waiting %ss for the indexer to advance\n' "$ADVANCE_WAIT"
-sleep "$ADVANCE_WAIT"
-block_after=$(curl -sS "$PUBLIC_URL/api/health" | grep -o '"lastProcessedBlock":[0-9]*' | cut -d: -f2)
-if [ -n "$block_before" ] && [ -n "$block_after" ] && [ "$block_after" -gt "$block_before" ]; then
-  ok "worker pool advances the checkpoint ($block_before -> $block_after)"
-else
-  bad "worker pool advances the checkpoint ($block_before -> $block_after)"
-fi
+  age=$(printf '%s' "$health" | grep -o '"checkpointAgeSeconds":[0-9]*' | cut -d: -f2)
+  if [ -n "$age" ] && [ "$age" -le "$MAX_CHECKPOINT_AGE" ]; then
+    ok "checkpoint age is bounded (${age}s <= ${MAX_CHECKPOINT_AGE}s)"
+  else
+    bad "checkpoint age is bounded (got '${age:-none}s')"
+  fi
 
-transfers_code=$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_URL/api/transfers?limit=5")
-assert "transfers endpoint responds" "200" "$transfers_code"
+  # Proves the worker pool is live without needing bucket read access.
+  block_before=$(printf '%s' "$health" | grep -o '"lastProcessedBlock":[0-9]*' | cut -d: -f2)
+  printf '  ....  waiting %ss for the indexer to advance\n' "$ADVANCE_WAIT"
+  sleep "$ADVANCE_WAIT"
+  block_after=$(curl -sS "$PUBLIC_URL/api/health" | grep -o '"lastProcessedBlock":[0-9]*' | cut -d: -f2)
+  if [ -n "$block_before" ] && [ -n "$block_after" ] && [ "$block_after" -gt "$block_before" ]; then
+    ok "worker pool advances the checkpoint ($block_before -> $block_after)"
+  else
+    bad "worker pool advances the checkpoint ($block_before -> $block_after)"
+  fi
+
+  transfers_code=$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_URL/api/transfers?limit=5")
+  assert "transfers endpoint responds" "200" "$transfers_code"
+fi
 
 # Alerting disabled; keep the isolation check for easy restoration.
 # section "Isolation"

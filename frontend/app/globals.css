@@ -77,6 +77,39 @@ button {
 button:hover { filter: brightness(1.08); }
 button:disabled { cursor: wait; opacity: 0.65; }
 
+.offlineBanner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 20px;
+  padding: 18px 22px;
+  border: 1px solid rgba(108, 167, 255, 0.35);
+  border-radius: 14px;
+  background:
+    linear-gradient(120deg, rgba(108, 167, 255, 0.12), rgba(100, 244, 188, 0.08)),
+    var(--panel);
+}
+
+.offlineBanner > div { display: flex; flex-direction: column; gap: 4px; }
+.offlineBanner .eyebrow { margin-bottom: 2px; color: var(--usdc); }
+.offlineBanner strong { font-size: 1.05rem; }
+.offlineBanner > div > span { color: var(--muted); font-size: 0.86rem; line-height: 1.55; }
+
+.offlineEmoji {
+  flex: none;
+  font-size: 2.4rem;
+  animation: offlineBob 3s ease-in-out infinite;
+}
+
+@keyframes offlineBob {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50% { transform: translateY(-6px) rotate(4deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .offlineEmoji { animation: none; }
+}
+
 .healthbar {
   display: flex;
   flex-wrap: wrap;
