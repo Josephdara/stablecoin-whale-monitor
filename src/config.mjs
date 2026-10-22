@@ -79,6 +79,10 @@ export function loadApiConfig(env = process.env) {
     allowedOrigin: env.API_ALLOWED_ORIGIN?.trim() || "",
     chainId: integer(env, "CHAIN_ID", { min: 1, max: 2 ** 31 - 1 }),
     retentionDays: integer(env, "RETENTION_DAYS", { min: 1, max: 365 }),
+    // Indexer settings reported by /api/health. Optional: reported as null when unset.
+    minimumAmount: optionalDecimal(env, "MIN_AMOUNT"),
+    confirmationBuffer: optionalInteger(env, "CONFIRMATION_BUFFER", null, { min: 0, max: 1_000 }),
+    pollIntervalMs: optionalInteger(env, "POLL_INTERVAL_MS", null, { min: 1_000, max: 3_600_000 }),
   };
   if (config.maxStaleMs < config.refreshMs) {
     throw new Error("API_MAX_STALE_MS cannot be less than API_REFRESH_MS");
@@ -137,6 +141,10 @@ function integer(env, key, { min, max = Number.MAX_SAFE_INTEGER }) {
 
 function optionalInteger(env, key, fallback, bounds) {
   return env[key]?.trim() ? integer(env, key, bounds) : fallback;
+}
+
+function optionalDecimal(env, key) {
+  return env[key]?.trim() ? decimal(env, key) : null;
 }
 
 function decimal(env, key) {

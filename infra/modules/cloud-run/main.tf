@@ -238,6 +238,10 @@ resource "google_cloud_run_v2_service" "api" {
           API_ALLOWED_ORIGIN      = var.api_allowed_origin
           CHAIN_ID                = tostring(var.chain_id)
           RETENTION_DAYS          = tostring(var.event_retention_days)
+          # Indexer settings the API reports from /api/health.
+          MIN_AMOUNT          = var.minimum_transfer_amount
+          CONFIRMATION_BUFFER = tostring(var.confirmation_buffer)
+          POLL_INTERVAL_MS    = tostring(var.poll_interval_ms)
         })
         content {
           name  = env.key

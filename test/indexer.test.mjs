@@ -39,6 +39,7 @@ test("confirmation buffer and 2,000-block boundaries advance an empty checkpoint
   assert.equal(result.confirmedHead, 2_100);
   assert.equal(storage.checkpoint.lastProcessedBlock, 2_100);
   assert.equal(storage.checkpoint.lastProcessedBlockHash, blockHash(2_100));
+  assert.equal(storage.checkpoint.chainHeadBlock, 2_112);
 });
 
 test("the continuous indexer retries after a failed cycle", async () => {

@@ -81,6 +81,8 @@ export async function runCycle({ config, rpc, storage, hooks = {} }) {
       chainId: config.chainId,
       lastProcessedBlock: toBlock,
       lastProcessedBlockHash: rangeResult.endBlock.hash,
+      // Chain head read at the start of this cycle, reported by /api/health.
+      chainHeadBlock: latestBlock,
       updatedAt: new Date().toISOString(),
     };
     const expectedGeneration = checkpointState?.generation ?? "0";

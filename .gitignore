@@ -55,3 +55,5 @@ docs/*
 !docs/PLAYBOOK.md
 !docs/RUNBOOK.md
 python-fetch/
+agents.md
+design.md

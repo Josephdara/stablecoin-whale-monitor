@@ -788,7 +788,7 @@ frontend keeps serving an offline notice. Three switches control it:
 | Switch | File |
 | --- | --- |
 | `services_paused` local | `infra/environments/test/main.tf` |
-| `SERVICES_PAUSED` constant | `frontend/app/page.tsx` |
+| `SERVICES_PAUSED_DEFAULT` constant (or `NEXT_PUBLIC_SERVICES_PAUSED` at build) | `frontend/lib/config.ts` |
 | `_SERVICES_PAUSED` substitution | `cloudbuild/cloudbuild-cd.yaml` |
 
 To pause, set all three to `true`, apply Terraform as in

@@ -364,6 +364,10 @@ test("a failed refresh serves a warm index and reports degraded health", async (
     assert.equal(body.indexedEvents, 1);
     assert.equal(body.indexError, null);
     assert.match(body.lastRefreshError, /unreachable/);
+    assert.deepEqual(
+      [body.chainHeadBlock, body.indexThreshold, body.confirmationBuffer, body.pollIntervalSeconds],
+      [null, null, null, null],
+    );
   });
 });
 
@@ -489,11 +493,15 @@ test("transaction lookup and health refresh stale indexes on their request paths
       calls += 1;
       return [event];
     },
-    readCheckpoint: async () => null,
+    readCheckpoint: async () => ({
+      value: { lastProcessedBlock: 100, chainHeadBlock: 106, updatedAt: new Date().toISOString() },
+      generation: "1",
+    }),
   };
   const index = new EventIndex(storage, 1, 7);
+  const reportedConfig = apiConfig({ minimumAmount: "100000", confirmationBuffer: 6, pollIntervalMs: 30_000 });
 
-  await withApi({ config: apiConfig(), storage, index }, async (request) => {
+  await withApi({ config: reportedConfig, storage, index }, async (request) => {
     const transaction = await request(`/api/transfers/${event.transactionHash}`);
     assert.equal(transaction.status, 200);
     assert.equal((await transaction.json()).total, 1);
@@ -502,7 +510,12 @@ test("transaction lookup and health refresh stale indexes on their request paths
     index.refreshedAt = new Date(Date.now() - 60_000).toISOString();
     const health = await request("/api/health");
     assert.equal(health.status, 200);
-    assert.equal((await health.json()).status, "ok");
+    const body = await health.json();
+    assert.equal(body.status, "ok");
+    assert.deepEqual(
+      [body.lastProcessedBlock, body.chainHeadBlock, body.indexThreshold, body.confirmationBuffer, body.pollIntervalSeconds],
+      [100, 106, "100000", 6, 30],
+    );
     assert.equal(calls, 2);
   });
 });
@@ -542,7 +555,7 @@ test("checkpoint read failures return degraded health without invalidating the i
   assert.match(logs[0].checkpointError, /unavailable/);
 });
 
-test("api configuration validates refresh deadlines and maximum staleness", () => {
+test("api configuration validates refresh deadlines, maximum staleness and reported indexer settings", () => {
   const base = {
     STORAGE_BACKEND: "local",
     API_PORT: "3001",
@@ -562,6 +575,11 @@ test("api configuration validates refresh deadlines and maximum staleness", () =
     () => loadApiConfig({ ...base, API_MAX_STALE_MS: "29999" }),
     /API_MAX_STALE_MS cannot be less than API_REFRESH_MS/,
   );
+  const unset = loadApiConfig({ ...base });
+  assert.deepEqual([unset.minimumAmount, unset.confirmationBuffer, unset.pollIntervalMs], [null, null, null]);
+  const reported = loadApiConfig({ ...base, MIN_AMOUNT: "100000", CONFIRMATION_BUFFER: "6", POLL_INTERVAL_MS: "30000" });
+  assert.deepEqual([reported.minimumAmount, reported.confirmationBuffer, reported.pollIntervalMs], ["100000", 6, 30_000]);
+  assert.throws(() => loadApiConfig({ ...base, CONFIRMATION_BUFFER: "1001" }), /CONFIRMATION_BUFFER/);
 });
 
 test("api configuration requires a valid retention window", () => {

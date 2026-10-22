@@ -1,688 +1,390 @@
-"use client";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { CodeBlock } from "../components/CodeBlock";
+import { Icon, TokenGlyph } from "../components/Icon";
+import { SiteFooter } from "../components/SiteFooter";
+import { Amount, Callout, ExampleTag, TokenBadge, TypeBadge } from "../components/ui";
+import type { Transfer } from "../lib/api";
+import { CONFIRMATION_SECONDS, COVERAGE, MAINTENANCE, SITE, TOKENS } from "../lib/config";
+import { formatLongDate, groupInteger } from "../lib/format";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+const THRESHOLD = groupInteger(COVERAGE.indexThreshold);
+const RETURN_DATE = formatLongDate(MAINTENANCE.expectedReturn);
 
-type Transfer = {
-  chain: "ethereum";
-  chainId: number;
-  token: "USDC" | "USDT";
-  from: string;
-  to: string;
-  amount: string;
-  rawAmount: string;
-  threshold: string;
-  tokenContract: string;
-  blockNumber: number;
-  blockTimestamp: string;
-  logIndex: number;
-  transactionHash: string;
-  transactionStatus: "success";
-  transferType: "mint" | "burn" | "normal";
-  detectedAt: string;
-};
+// Invented values for the illustration only. Always shown with an Example data tag.
+const EXAMPLE_ROWS: Array<{ time: string; token: "USDC" | "USDT"; amount: string; type: Transfer["transferType"]; from: string; to: string }> = [
+  { time: "14:03 UTC", token: "USDT", amount: "1250000", type: "normal", from: "0xa4c1…216f", to: "0xdaee…9e9c" },
+  { time: "14:02 UTC", token: "USDC", amount: "348912.417203", type: "normal", from: "0x3b02…7a76", to: "0x7c76…2cec" },
+  { time: "13:56 UTC", token: "USDC", amount: "5000000", type: "mint", from: "0x0000…0000", to: "0xe0ca…3e0a" },
+  { time: "13:52 UTC", token: "USDT", amount: "2750000.5", type: "normal", from: "0x8183…9fc3", to: "0x5526…287c" },
+  { time: "13:42 UTC", token: "USDC", amount: "12000000", type: "burn", from: "0x611a…142a", to: "0x0000…0000" },
+];
 
-type TransfersResponse = {
-  items: Transfer[];
-  nextCursor: string | null;
-  total: number;
-  counts: { USDC: number; USDT: number };
-  refreshedAt: string;
-};
+const REQUEST_EXAMPLE = `curl "${SITE.origin}/api/transfers?token=USDT&minimumAmount=250000&limit=1"`;
 
-type TransactionResponse = {
-  transactionHash: string;
-  items: Transfer[];
-  total: number;
-  refreshedAt: string | null;
-};
+const RESPONSE_EXAMPLE = `{
+  "items": [{
+    "chain": "ethereum", "chainId": 1,
+    "token": "USDT",
+    "tokenContract": "${TOKENS.USDT.contract}",
+    "from": "0x818319478da6bd0c621de49f145fda9988c79fc3",
+    "to": "0x5526f7eaed46725a2a7b860dcd6c8a1f8b46287c",
+    "amount": "2750000.5",
+    "rawAmount": "2750000500000",
+    "threshold": "${COVERAGE.indexThreshold}",
+    "blockNumber": 26248680,
+    "blockTimestamp": "2026-10-22T13:52:59.000Z",
+    "logIndex": 257,
+    "transactionHash": "0xced9041d…6fd287db7",
+    "transactionStatus": "success",
+    "transferType": "normal",
+    "detectedAt": "2026-10-22T13:54:41.512Z"
+  }],
+  "nextCursor": "eyJrZXkiOiIxOjB4Y2VkOTA0…",
+  "total": 312,
+  "counts": { "USDC": 0, "USDT": 312 },
+  "refreshedAt": "2026-10-22T14:02:31.204Z"
+}`;
 
-type HealthResponse = {
-  status: "ok" | "degraded";
-  lastProcessedBlock: number | null;
-  checkpointUpdatedAt: string | null;
-  checkpointAgeSeconds: number | null;
-  retentionDays: number;
-  indexedEvents: number;
-  indexRefreshedAt: string | null;
-  indexError: string | null;
-  lastRefreshError: string | null;
-  checkpointError: string | null;
-};
-
-type HealthLevel = "healthy" | "delayed" | "stale" | "unavailable";
-type TransferLoadResult = "loaded" | "reset" | "ignored" | "failed";
-
-type Filters = { token: "" | "USDC" | "USDT"; minimumAmount: string; address: string };
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-const PAGE_SIZE = 50;
-const EMPTY_FILTERS: Filters = { token: "", minimumAmount: "", address: "" };
-const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
-const HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
-const AMOUNT_PATTERN = /^[0-9]+(?:\.[0-9]{1,6})?$/;
-// Paused until 2026-10-25 along with the API and indexer.
-const SERVICES_PAUSED = true;
-
-function apiUrl(path: string) {
-  return new URL(`${API_BASE_URL}${path}`, window.location.origin);
-}
-
-class ApiRequestError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-    this.name = "ApiRequestError";
-  }
-}
-
-async function fetchTransfersPage(cursor: string, filters: Filters): Promise<TransfersResponse> {
-  const url = apiUrl("/api/transfers");
-  url.searchParams.set("limit", String(PAGE_SIZE));
-  if (cursor) url.searchParams.set("cursor", cursor);
-  if (filters.token) url.searchParams.set("token", filters.token);
-  if (filters.minimumAmount) url.searchParams.set("minimumAmount", filters.minimumAmount);
-  if (filters.address) url.searchParams.set("address", filters.address);
-
-  const response = await fetch(url, { cache: "no-store" });
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new ApiRequestError(
-      response.status,
-      getApiError(payload) ?? `Could not load transfer data (${response.status})`,
-    );
-  }
-  if (!isTransfersResponse(payload)) throw new Error("API returned an invalid transfer response");
-  return payload;
-}
-
-export default function Home() {
-  return SERVICES_PAUSED ? <Offline /> : <Monitor />;
-}
-
-function Offline() {
-  return (
-    <main>
-      <Hero />
-      <section className="offlineBanner" role="status">
-        <span className="offlineEmoji" aria-hidden="true">🐋</span>
-        <div>
-          <p className="eyebrow">Gone fishing</p>
-          <strong>The whales are migrating, and so are we.</strong>
-          <span>
-            The indexer and API are switched off until October 25. No point serving stale
-            splashes, so the live feed is taking a break too. See you back in the deep end!
-          </span>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function Monitor() {
-  const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
-  const [counts, setCounts] = useState({ USDC: 0, USDT: 0 });
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [cursorHistory, setCursorHistory] = useState<string[]>([""]);
-  const [now, setNow] = useState(() => new Date());
-
-  const [form, setForm] = useState<Filters>(EMPTY_FILTERS);
-  const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
-  const [filterError, setFilterError] = useState<string | null>(null);
-
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthOk, setHealthOk] = useState(true);
-
-  const [txQuery, setTxQuery] = useState("");
-  const [txDetail, setTxDetail] = useState<TransactionResponse | null>(null);
-  const [txError, setTxError] = useState<string | null>(null);
-  const [txLoading, setTxLoading] = useState(false);
-  const transferRequestId = useRef(0);
-
-  const loadTransfers = useCallback(
-    async (cursor = "", resetHistory = false): Promise<TransferLoadResult> => {
-      const requestId = transferRequestId.current + 1;
-      transferRequestId.current = requestId;
-      setLoading(true);
-      setError(null);
-
-      try {
-        let payload: TransfersResponse;
-        let recoveredExpiredCursor = false;
-        try {
-          payload = await fetchTransfersPage(cursor, applied);
-        } catch (reason) {
-          if (requestId !== transferRequestId.current) return "ignored";
-          if (!(cursor && reason instanceof ApiRequestError && reason.status === 400)) throw reason;
-          payload = await fetchTransfersPage("", applied);
-          recoveredExpiredCursor = true;
-        }
-
-        if (requestId !== transferRequestId.current) return "ignored";
-        setTransfers(payload.items);
-        setTotal(payload.total);
-        setCounts(payload.counts);
-        setNextCursor(payload.nextCursor);
-        if (resetHistory || recoveredExpiredCursor) setCursorHistory([""]);
-        return recoveredExpiredCursor ? "reset" : "loaded";
-      } catch (reason) {
-        if (requestId !== transferRequestId.current) return "ignored";
-        setError(reason instanceof Error ? reason.message : "Unable to load data");
-        return "failed";
-      } finally {
-        if (requestId === transferRequestId.current) setLoading(false);
-      }
-    },
-    [applied],
-  );
-
-  const loadHealth = useCallback(async () => {
-    try {
-      const response = await fetch(apiUrl("/api/health"), { cache: "no-store" });
-      const payload: unknown = await response.json();
-      setHealth(isHealthResponse(payload) ? payload : null);
-      setHealthOk(response.ok);
-    } catch {
-      setHealth(null);
-      setHealthOk(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadTransfers("", true);
-    const refresh = window.setInterval(() => void loadTransfers("", true), 30_000);
-    return () => window.clearInterval(refresh);
-  }, [loadTransfers]);
-
-  useEffect(() => {
-    void loadHealth();
-    const refresh = window.setInterval(() => void loadHealth(), 30_000);
-    return () => window.clearInterval(refresh);
-  }, [loadHealth]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(new Date()), 60_000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  const currentPage = cursorHistory.length;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const pageOffset = (currentPage - 1) * PAGE_SIZE;
-  const pageStart = Math.min(pageOffset + 1, total);
-  const pageEnd = Math.min(pageOffset + transfers.length, total);
-  const paginationIsConsistent = currentPage <= pageCount && pageStart <= pageEnd;
-  const healthLevel = classifyHealth(health, healthOk);
-  const hasActiveFilters = Boolean(applied.token || applied.minimumAmount || applied.address);
-  const retentionWindow = health
-    ? `the last ${health.retentionDays} ${health.retentionDays === 1 ? "day" : "days"}`
-    : "the current retention window";
-
-  useEffect(() => {
-    if (!loading && !error && currentPage > pageCount) void loadTransfers("", true);
-  }, [currentPage, error, loadTransfers, loading, pageCount]);
-
-  async function goNext() {
-    const cursor = nextCursor;
-    if (!cursor) return;
-    if (await loadTransfers(cursor) === "loaded") {
-      setCursorHistory((history) => [...history, cursor]);
-    }
-  }
-
-  async function goPrevious() {
-    if (cursorHistory.length <= 1) return;
-    const previousCursor = cursorHistory.at(-2) ?? "";
-    if (await loadTransfers(previousCursor) === "loaded") {
-      setCursorHistory((history) => history.slice(0, -1));
-    }
-  }
-
-  function applyFilters(event: React.FormEvent) {
-    event.preventDefault();
-    const address = form.address.trim();
-    const minimumAmount = form.minimumAmount.trim();
-    if (address && !ADDRESS_PATTERN.test(address)) {
-      setFilterError("Enter a valid 0x wallet address (40 hex characters).");
-      return;
-    }
-    if (minimumAmount && !AMOUNT_PATTERN.test(minimumAmount)) {
-      setFilterError("Minimum amount must be a number with up to 6 decimals.");
-      return;
-    }
-    setFilterError(null);
-    setApplied({ token: form.token, minimumAmount, address: address.toLowerCase() });
-  }
-
-  function resetFilters() {
-    setForm(EMPTY_FILTERS);
-    setApplied(EMPTY_FILTERS);
-    setFilterError(null);
-  }
-
-  async function lookupTransaction(event: React.FormEvent) {
-    event.preventDefault();
-    const hash = txQuery.trim().toLowerCase();
-    if (!HASH_PATTERN.test(hash)) {
-      setTxDetail(null);
-      setTxError("Enter a 32-byte transaction hash (0x followed by 64 hex characters).");
-      return;
-    }
-    setTxLoading(true);
-    setTxError(null);
-    try {
-      const response = await fetch(apiUrl(`/api/transfers/${hash}`), { cache: "no-store" });
-      if (response.status === 404) {
-        setTxDetail(null);
-        setTxError("No qualifying transfers are indexed for that transaction.");
-        return;
-      }
-      if (!response.ok) throw new Error(`Lookup failed (${response.status})`);
-      const payload: unknown = await response.json();
-      if (!isTransactionResponse(payload)) throw new Error("API returned an invalid transaction response");
-      setTxDetail(payload);
-    } catch (reason) {
-      setTxDetail(null);
-      setTxError(reason instanceof Error ? reason.message : "Unable to look up transaction");
-    } finally {
-      setTxLoading(false);
-    }
-  }
-
-  function clearTransaction() {
-    setTxQuery("");
-    setTxDetail(null);
-    setTxError(null);
-  }
+export default function HomePage() {
+  const paused = MAINTENANCE.paused;
 
   return (
-    <main>
-      <Hero>
-        <button type="button" onClick={() => void loadTransfers("", true)} disabled={loading}>
-          {loading ? "Loading…" : "Reload data"}
-        </button>
-      </Hero>
-
-      <section className={`healthbar level-${healthLevel}`} aria-label="Indexer status">
-        <span className="healthBadge">{HEALTH_LABEL[healthLevel]}</span>
-        <HealthField label="Last processed block" value={
-          health?.lastProcessedBlock != null ? health.lastProcessedBlock.toLocaleString() : "—"
-        } />
-        <HealthField label="Checkpoint age" value={
-          health?.checkpointAgeSeconds != null ? formatDuration(health.checkpointAgeSeconds) : "—"
-        } />
-        <HealthField label={
-          health ? `Events in ${health.retentionDays}-day window` : "Events in retention window"
-        } value={
-          health?.indexedEvents != null ? health.indexedEvents.toLocaleString() : "—"
-        } />
-        <HealthField label="Index refresh" value={
-          health?.indexRefreshedAt ? new Date(health.indexRefreshedAt).toLocaleTimeString() : "—"
-        } />
-      </section>
-
-      <section className="panel lookup">
-        <div className="panelHeader">
-          <div>
-            <p className="eyebrow">Transaction lookup</p>
-            <h2>Find a transaction</h2>
-          </div>
-          <span className="source">Every qualifying log</span>
-        </div>
-        <form className="toolbar" onSubmit={(event) => void lookupTransaction(event)}>
-          <input
-            className="control grow"
-            type="text"
-            inputMode="text"
-            placeholder="0x transaction hash"
-            value={txQuery}
-            onChange={(event) => setTxQuery(event.target.value)}
-            aria-label="Transaction hash"
-          />
-          <button type="submit" className="pageButton" disabled={txLoading}>
-            {txLoading ? "Searching…" : "Look up"}
-          </button>
-          {txDetail || txError ? (
-            <button type="button" className="pageButton" onClick={clearTransaction}>
-              Clear
-            </button>
-          ) : null}
-        </form>
-
-        {txError ? (
-          <div className="state error" role="alert">
-            <strong>Transaction not shown.</strong>
-            <span>{txError}</span>
-          </div>
-        ) : txDetail ? (
-          <>
-            <p className="detailNote">
-              {txDetail.total} qualifying {txDetail.total === 1 ? "transfer" : "transfers"} in{" "}
-              <span className="address">{shorten(txDetail.transactionHash)}</span>
-            </p>
-            <TransfersTable transfers={txDetail.items} now={now} />
-          </>
-        ) : null}
-      </section>
-
-      <section className="panel">
-        <div className="panelHeader">
-          <div>
-            <p className="eyebrow">Transfer feed</p>
-            <h2>Recent transfers</h2>
-          </div>
-          <span className="source">
-            {total.toLocaleString()} matching · {counts.USDC.toLocaleString()} USDC ·{" "}
-            {counts.USDT.toLocaleString()} USDT
-          </span>
-        </div>
-
-        <form className="toolbar" onSubmit={applyFilters}>
-          <label className="control-label">
-            Token
-            <select
-              className="control"
-              value={form.token}
-              onChange={(event) => setForm((f) => ({ ...f, token: event.target.value as Filters["token"] }))}
-            >
-              <option value="">All</option>
-              <option value="USDC">USDC</option>
-              <option value="USDT">USDT</option>
-            </select>
-          </label>
-          <label className="control-label">
-            Minimum amount
-            <input
-              className="control"
-              type="text"
-              inputMode="decimal"
-              placeholder="e.g. 250000"
-              value={form.minimumAmount}
-              onChange={(event) => setForm((f) => ({ ...f, minimumAmount: event.target.value }))}
-            />
-          </label>
-          <label className="control-label grow">
-            Wallet address
-            <input
-              className="control"
-              type="text"
-              placeholder="0x sender or receiver"
-              value={form.address}
-              onChange={(event) => setForm((f) => ({ ...f, address: event.target.value }))}
-            />
-          </label>
-          <div className="toolbarActions">
-            <button type="submit" className="pageButton" disabled={loading}>Apply</button>
-            <button type="button" className="pageButton" onClick={resetFilters}>Reset</button>
-          </div>
-        </form>
-
-        {filterError ? (
-          <div className="state error" role="alert">
-            <strong>Filters not applied.</strong>
-            <span>{filterError}</span>
-          </div>
-        ) : error ? (
-          <div className="state error" role="alert">
-            <strong>Data could not be loaded.</strong>
-            <span>{error}</span>
-          </div>
-        ) : transfers.length === 0 && !loading ? (
-          <div className="state">
-            <strong>
-              {hasActiveFilters
-                ? "No transfers match these filters."
-                : `No qualifying transfers in ${retentionWindow}.`}
-            </strong>
-            <span>
-              {hasActiveFilters
-                ? "Adjust or reset the filters to broaden the results."
-                : "New qualifying transfers will appear automatically."}
-            </span>
-          </div>
-        ) : (
-          <TransfersTable transfers={transfers} now={now} />
-        )}
-
-        {!error && !filterError && transfers.length > 0 && paginationIsConsistent ? (
-          <nav className="pagination" aria-label="Transfer pages">
-            <span>
-              Showing {pageStart}–{pageEnd} of {total}
-            </span>
-            <div>
-              <button
-                type="button"
-                className="pageButton"
-                disabled={currentPage === 1}
-                onClick={() => void goPrevious()}
-              >
-                Previous
-              </button>
-              <span>Page {currentPage} of {pageCount}</span>
-              <button
-                type="button"
-                className="pageButton"
-                disabled={!nextCursor}
-                onClick={() => void goNext()}
-              >
-                Next
-              </button>
+    <>
+      <main id="content">
+        <section className="hero">
+          <svg className="hero-rings" aria-hidden="true" viewBox="0 0 800 800" fill="none">
+            <circle cx="400" cy="400" r="380" stroke="#00CFFF" strokeWidth="1" />
+            <circle cx="400" cy="400" r="290" stroke="#2FD3B6" strokeWidth="1" />
+            <circle cx="400" cy="400" r="200" stroke="#00CFFF" strokeWidth="1" />
+            <circle cx="400" cy="400" r="110" stroke="#2FD3B6" strokeWidth="1" />
+          </svg>
+          <div className="wrap hero-grid">
+            <div className="stack gap-24">
+              <span className="pill" style={{ alignSelf: "flex-start" }}>
+                <TokenGlyph token="USDC" />USDC
+                <TokenGlyph token="USDT" />USDT
+                <span className="subtle">on Ethereum mainnet</span>
+              </span>
+              <h1 className="display">See every USDC and USDT transfer of {THRESHOLD} tokens or more on Ethereum.</h1>
+              <p className="lead" style={{ maxWidth: 560 }}>
+                Stablecoin Whale Monitor records large stablecoin transfers after {COVERAGE.confirmationBlocks} block
+                confirmations, keeps them for {COVERAGE.retentionDays} days, and links each one to its on-chain record
+                so you can verify it yourself.
+              </p>
+              {paused ? (
+                <Callout tone="paused">
+                  The monitor is resting until {RETURN_DATE}. The live feed and API are switched off during
+                  maintenance. Everything else on this site works as usual.
+                </Callout>
+              ) : null}
+              <div className="wrap-row gap-12">
+                {paused ? (
+                  <>
+                    <Link className="btn btn-primary btn-lg" href="/docs/">Read documentation</Link>
+                    <Link className="btn btn-secondary btn-lg" href="/status/">See maintenance details</Link>
+                  </>
+                ) : (
+                  <>
+                    <Link className="btn btn-primary btn-lg" href="/monitor/">
+                      Open monitor
+                      <Icon name="arrow" />
+                    </Link>
+                    <Link className="btn btn-secondary btn-lg" href="/docs/">Read documentation</Link>
+                  </>
+                )}
+              </div>
+              <div className="facts" aria-label="Coverage">
+                <Fact label="Tokens" value="USDC, USDT" />
+                <Fact label="Network" value={COVERAGE.network} />
+                <Fact label="Qualifies at" value={`${THRESHOLD} tokens`} />
+                <Fact label="Confirmation" value={`${COVERAGE.confirmationBlocks} blocks`} />
+                <Fact label="Retention" value={`${COVERAGE.retentionDays} days`} />
+              </div>
             </div>
-          </nav>
+
+            <figure className="stack gap-10">
+              <div className="panel" style={{ overflow: "hidden" }}>
+                <div className="row spread gap-12" style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
+                  <div className="row gap-8">
+                    <img className="logo" src="/logo.png" alt="" width={20} height={20} />
+                    <span className="small strong">Transfer monitor</span>
+                  </div>
+                  <ExampleTag />
+                </div>
+                <div className="wrap-row gap-8" style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)" }}>
+                  <span className="chip static"><span className="k">Token</span>All</span>
+                  <span className="chip static"><span className="k">Min</span><span className="num">{THRESHOLD}</span></span>
+                  <span className="small subtle num" style={{ marginLeft: "auto" }}>5 example transfers</span>
+                </div>
+                <div className="scroll-x">
+                  <table className="tbl compact">
+                    <caption className="sr-only">Example transfers, not live data</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Time</th>
+                        <th scope="col">Token</th>
+                        <th scope="col" className="r">Amount</th>
+                        <th scope="col">From</th>
+                        <th scope="col">To</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {EXAMPLE_ROWS.map((row) => (
+                        <tr key={row.time + row.amount}>
+                          <td className="small subtle num">{row.time}</td>
+                          <td><TokenBadge token={row.token} /></td>
+                          <td className="r">
+                            <span className="row gap-8" style={{ justifyContent: "flex-end" }}>
+                              <TypeBadge type={row.type} />
+                              <Amount value={row.amount} />
+                            </span>
+                          </td>
+                          <td><span className={`addr ${row.from.startsWith("0x0000") ? "zero" : ""}`}>{row.from}</span></td>
+                          <td><span className={`addr ${row.to.startsWith("0x0000") ? "zero" : ""}`}>{row.to}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <figcaption className="small subtle">
+                Illustration of the monitor using example data. Addresses and amounts are not real transfers.
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+
+        {paused ? (
+          <section className="sec" aria-labelledby="available-h">
+            <div className="wrap stack gap-24">
+              <div className="sec-head">
+                <span className="overline">Available during maintenance</span>
+                <h2 className="h2" id="available-h">Everything except the live feed works.</h2>
+              </div>
+              <div className="grid-auto-240">
+                <QuickLink href="/docs/guide/" title="Product guide" text="What qualifies, filters, freshness and limits" />
+                <QuickLink href="/docs/api/" title="API reference" text="Endpoints, schema and error codes, ready for when the API returns" />
+                <QuickLink href="/docs/architecture/" title="Architecture and security" text="How the indexer, storage and API fit together" />
+                <QuickLink href="/status/" title="Status" text="What is paused and when it returns" />
+              </div>
+            </div>
+          </section>
         ) : null}
-      </section>
 
-      <p className="disclosure">
-        Events are published after 6 confirmations, which reduces short-reorganization
-        exposure but is not a finality guarantee. After a deep reorganization, records that
-        were already published are not rewritten.
-      </p>
-    </main>
+        <section className="sec" aria-labelledby="how-h">
+          <div className="wrap stack" style={{ gap: 40 }}>
+            <div className="sec-head">
+              <span className="overline">How it works</span>
+              <h2 className="h1" id="how-h">Observe, filter, inspect, verify.</h2>
+            </div>
+            <ol className="plain-list grid-auto-240">
+              <Step n="01" icon="api" title="Observe">
+                The indexer reads Transfer logs from the USDC and USDT contracts {COVERAGE.confirmationBlocks} blocks
+                behind the chain tip and records every transfer of {THRESHOLD} tokens or more.
+              </Step>
+              <Step n="02" icon="filters" title="Filter">
+                Narrow the feed by token, a higher minimum amount, or one address on either side of the transfer. Each
+                view has its own link you can share.
+              </Step>
+              <Step n="03" icon="search" title="Inspect">
+                Open a transfer for the exact amount, raw base units, block, log index and the time it was recorded.
+                Look up a transaction to see all of its qualifying transfers.
+              </Step>
+              <Step n="04" icon="external" title="Verify">
+                Every transaction, address and block links to Etherscan, so you can check each record against the
+                chain yourself.
+              </Step>
+            </ol>
+          </div>
+        </section>
+
+        <section className="sec" aria-labelledby="who-h">
+          <div className="wrap stack" style={{ gap: 40 }}>
+            <div className="sec-head">
+              <span className="overline">Who it is for</span>
+              <h2 className="h1" id="who-h">One record of large transfers, three ways to use it.</h2>
+            </div>
+            <div className="grid-auto-320">
+              <Audience title="Analysts" href="/docs/guide/#details" link="Reading transfer details">
+                Research large movements, mints and burns without wading through every small transfer. Start from the
+                feed, open a transfer, and take the transaction hash to Etherscan or your own tools.
+              </Audience>
+              <Audience title="Treasury and operations" href="/docs/guide/#filters" link="Filtering by address">
+                Follow an address you care about. The address filter matches the sender or the receiver, and the link
+                keeps the filter, so a teammate opens exactly the same view.
+              </Audience>
+              <Audience title="Developers" href="/docs/api/" link="API reference">
+                Read the same records from a small read-only JSON API with exact decimal amounts, raw base units,
+                cursor pagination and a health endpoint that reports freshness.
+              </Audience>
+            </div>
+          </div>
+        </section>
+
+        <section className="sec" aria-labelledby="data-h">
+          <div className="wrap grid-split">
+            <div className="stack gap-20">
+              <span className="overline">Data and freshness</span>
+              <h2 className="h1" id="data-h">Where the data comes from and how current it is.</h2>
+              <p className="muted">
+                A transfer appears in the monitor after the confirmation buffer plus the indexer and API refresh
+                intervals. That is usually under three minutes after its block, not instantly.
+              </p>
+              <dl className="kv-list">
+                <dt>Source</dt>
+                <dd>Transfer logs on {COVERAGE.network} (chain ID {COVERAGE.chainId}), read over JSON-RPC</dd>
+                <dt>USDC contract</dt>
+                <dd><span className="full-hex">{TOKENS.USDC.contract}</span></dd>
+                <dt>USDT contract</dt>
+                <dd><span className="full-hex">{TOKENS.USDT.contract}</span></dd>
+                <dt>Confirmation buffer</dt>
+                <dd className="num">{COVERAGE.confirmationBlocks} blocks, about {CONFIRMATION_SECONDS} seconds</dd>
+                <dt>Refresh cadence</dt>
+                <dd className="num">
+                  Indexer polls every {COVERAGE.pollIntervalSeconds} s. API reloads every {COVERAGE.apiRefreshSeconds} s
+                </dd>
+                <dt>Retention</dt>
+                <dd className="num">{COVERAGE.retentionDays} days, then removed from the API and from storage</dd>
+              </dl>
+            </div>
+            <div className="card pad-28 stack gap-16">
+              <h3 className="h3">Limitations</h3>
+              <ul className="bullets muted">
+                <li>Only USDC and USDT on {COVERAGE.network}. No other tokens, chains or event types.</li>
+                <li>Transfers below {THRESHOLD} tokens are never stored, so a lower display filter cannot reveal them.</li>
+                <li>Amounts are token units. There is no USD pricing and no total volume.</li>
+                <li>Addresses carry no labels. An address does not tell you who owns it.</li>
+                <li>History covers the last {COVERAGE.retentionDays} days only.</li>
+                <li>
+                  {COVERAGE.confirmationBlocks} confirmations reduce exposure to chain reorganizations but do not
+                  guarantee finality. Published records are not rewritten after a deep reorganization.
+                </li>
+              </ul>
+              <Link className="small row gap-6" href="/status/">Check current service status<Icon name="arrow" size={14} /></Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="sec" aria-labelledby="dev-h">
+          <div className="wrap grid-split">
+            <div className="stack gap-20">
+              <span className="overline">For developers</span>
+              <h2 className="h1" id="dev-h">A small, read-only API.</h2>
+              <p className="muted">
+                The monitor runs on the same public endpoints you can call. Responses are JSON from the same origin as
+                the site. No key is required.
+              </p>
+              {paused ? (
+                <Callout tone="paused">The API is paused until {RETURN_DATE}. Requests to /api will not be answered until then.</Callout>
+              ) : null}
+              <ul className="bullets small muted" style={{ gap: 8 }}>
+                <li><code className="ic-code">GET /api/transfers</code> newest first, filter by token, minimum amount or address, 1 to {COVERAGE.pageSize} per page</li>
+                <li><code className="ic-code">GET /api/transfers/{"{txHash}"}</code> every retained qualifying transfer in one transaction</li>
+                <li><code className="ic-code">GET /api/health</code> index freshness and chain progress</li>
+                <li>
+                  {COVERAGE.rateLimitRequests} requests per minute per IP address. Exceeding it returns 429 and blocks
+                  for {COVERAGE.rateLimitWindowSeconds} seconds.
+                </li>
+              </ul>
+              <div className="wrap-row gap-12">
+                <Link className="btn btn-secondary" href="/docs/api/">API reference</Link>
+                <Link className="btn btn-ghost" href="/docs/api/#http200">Why HTTP 200 is not always healthy</Link>
+              </div>
+            </div>
+            <div className="stack gap-12" style={{ minWidth: 0 }}>
+              <CodeBlock title="Request" code={REQUEST_EXAMPLE} />
+              <CodeBlock title="Response" label="Response · 200" code={RESPONSE_EXAMPLE} example />
+              <p className="small subtle">Hash and cursor shortened for display. Real responses return full values.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="sec" aria-labelledby="infra-h">
+          <div className="wrap stack" style={{ gap: 32 }}>
+            <div className="row spread gap-24" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div className="sec-head">
+                <span className="overline">Infrastructure and security</span>
+                <h2 className="h1" id="infra-h">Built on Google Cloud, locked down by default.</h2>
+              </div>
+              <Link className="btn btn-secondary" href="/docs/architecture/">Architecture and security docs</Link>
+            </div>
+            <div className="grid-auto-260">
+              <InfraCard title="Two small services">
+                An indexer on a single Cloud Run worker pool instance and a read-only API on Cloud Run, behind one HTTPS
+                load balancer with the static site.
+              </InfraCard>
+              <InfraCard title="Private, idempotent storage">
+                Events land as deterministic NDJSON objects in a private Cloud Storage bucket. The checkpoint advances
+                only after its range is written.
+              </InfraCard>
+              <InfraCard title="Guarded edge">
+                Cloud Armor rate limits the API per IP, the API accepts traffic only from the load balancer, and TLS 1.2
+                is the minimum.
+              </InfraCard>
+              <InfraCard title="Least privilege, gated releases">
+                One service account per workload, the RPC URL in Secret Manager, Terraform for infrastructure, and
+                approval-gated deploys of immutable image digests.
+              </InfraCard>
+            </div>
+          </div>
+        </section>
+      </main>
+      <SiteFooter />
+    </>
   );
 }
 
-function Hero({ children }: { children?: ReactNode }) {
-  return (
-    <header className="hero">
-      <div>
-        <p className="eyebrow">Ethereum mainnet</p>
-        <h1>Stablecoin Whale Monitor</h1>
-        <p className="subtitle">
-          Locally indexed USDC and USDT transfers, straight from the chain.
-        </p>
-      </div>
-      {children}
-    </header>
-  );
-}
 
-function TransfersTable({ transfers, now }: { transfers: Transfer[]; now: Date }) {
+function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="tableWrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Token</th>
-            <th>Amount</th>
-            <th>Sender</th>
-            <th>Receiver</th>
-            <th>Token address</th>
-            <th>Age</th>
-            <th>Transaction</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transfers.map((transfer) => (
-            <tr key={`${transfer.chainId}:${transfer.transactionHash}:${transfer.logIndex}`}>
-              <td>
-                <span className={`token token${transfer.token}`}>{transfer.token}</span>
-              </td>
-              <td className="amount">{formatDecimal(transfer.amount)}</td>
-              <td><Address value={transfer.from} /></td>
-              <td><Address value={transfer.to} /></td>
-              <td><Address value={transfer.tokenContract} /></td>
-              <td className="age">{formatRelativeAge(transfer.blockTimestamp, now)}</td>
-              <td>
-                <a
-                  className="hash"
-                  href={`https://etherscan.io/tx/${transfer.transactionHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={transfer.transactionHash}
-                >
-                  {shorten(transfer.transactionHash)} ↗
-                </a>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="fact">
+      <span className="caption subtle">{label}</span>
+      <span className="small num">{value}</span>
     </div>
   );
 }
 
-function HealthField({ label, value }: { label: string; value: string }) {
+function Step({ n, icon, title, children }: { n: string; icon: "api" | "filters" | "search" | "external"; title: string; children: ReactNode }) {
   return (
-    <span className="healthField">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </span>
+    <li className="card pad-24 stack gap-12">
+      <div className="row gap-10 tone-info">
+        <Icon name={icon} size={20} />
+        <span className="mono subtle">{n}</span>
+      </div>
+      <h3 className="h3">{title}</h3>
+      <p className="small muted">{children}</p>
+    </li>
   );
 }
 
-function Address({ value }: { value: string }) {
-  return <span className="address" title={value}>{shorten(value)}</span>;
-}
-
-const HEALTH_LABEL: Record<HealthLevel, string> = {
-  healthy: "Healthy",
-  delayed: "Delayed",
-  stale: "Stale",
-  unavailable: "Unavailable",
-};
-
-function classifyHealth(health: HealthResponse | null, healthOk: boolean): HealthLevel {
-  if (!healthOk || !health || health.indexError) return "unavailable";
-  if (health.lastRefreshError || health.checkpointError) return "delayed";
-  const age = health.checkpointAgeSeconds;
-  if (age == null) return "delayed";
-  if (age < 120) return "healthy";
-  if (age < 300) return "delayed";
-  return "stale";
-}
-
-function isTransfersResponse(value: unknown): value is TransfersResponse {
-  if (typeof value !== "object" || value === null) return false;
-  const response = value as Record<string, unknown>;
-  const counts = response.counts as Record<string, unknown> | null;
+function Audience({ title, href, link, children }: { title: string; href: string; link: string; children: ReactNode }) {
   return (
-    Array.isArray(response.items) && response.items.every(isTransfer) &&
-    (response.nextCursor === null || typeof response.nextCursor === "string") &&
-    Number.isSafeInteger(response.total) && Number(response.total) >= 0 &&
-    typeof counts === "object" && counts !== null &&
-    Number.isSafeInteger(counts.USDC) && Number(counts.USDC) >= 0 &&
-    Number.isSafeInteger(counts.USDT) && Number(counts.USDT) >= 0 &&
-    typeof response.refreshedAt === "string" && !Number.isNaN(Date.parse(response.refreshedAt))
+    <article className="card pad-28 stack gap-12">
+      <h3 className="h3">{title}</h3>
+      <p className="muted">{children}</p>
+      <Link className="small row gap-6" href={href} style={{ marginTop: "auto" }}>
+        {link}
+        <Icon name="arrow" size={14} />
+      </Link>
+    </article>
   );
 }
 
-function isTransactionResponse(value: unknown): value is TransactionResponse {
-  if (typeof value !== "object" || value === null) return false;
-  const response = value as Record<string, unknown>;
+function InfraCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    (response.status === "ok" || response.status === "degraded") &&
-    typeof response.transactionHash === "string" && HASH_PATTERN.test(response.transactionHash) &&
-    Array.isArray(response.items) && response.items.every(isTransfer) &&
-    Number.isSafeInteger(response.total) && Number(response.total) >= 0
+    <div className="card pad-24 stack gap-8">
+      <h3 className="h4">{title}</h3>
+      <p className="small muted">{children}</p>
+    </div>
   );
 }
 
-function isHealthResponse(value: unknown): value is HealthResponse {
-  if (typeof value !== "object" || value === null) return false;
-  const response = value as Record<string, unknown>;
+function QuickLink({ href, title, text }: { href: string; title: string; text: string }) {
   return (
-    (response.lastProcessedBlock === null || Number.isSafeInteger(response.lastProcessedBlock)) &&
-    (response.checkpointAgeSeconds === null || Number.isSafeInteger(response.checkpointAgeSeconds)) &&
-    Number.isSafeInteger(response.retentionDays) &&
-    Number(response.retentionDays) >= 1 && Number(response.retentionDays) <= 365 &&
-    Number.isSafeInteger(response.indexedEvents) &&
-    (response.indexError === null || typeof response.indexError === "string") &&
-    (response.lastRefreshError === null || typeof response.lastRefreshError === "string") &&
-    (response.checkpointError === null || typeof response.checkpointError === "string")
+    <Link className="card pad-20 stack gap-4" href={href} style={{ color: "var(--text)", textDecoration: "none" }}>
+      <span className="h4 row gap-8">{title}<Icon name="arrow" size={14} /></span>
+      <span className="small muted">{text}</span>
+    </Link>
   );
-}
-
-function getApiError(value: unknown) {
-  if (typeof value !== "object" || value === null) return null;
-  const error = (value as Record<string, unknown>).error;
-  return typeof error === "string" && error.trim() ? error : null;
-}
-
-function isTransfer(value: unknown): value is Transfer {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-
-  return (
-    item.chain === "ethereum" && item.chainId === 1 &&
-    (item.token === "USDC" || item.token === "USDT") &&
-    isAddress(item.from) && isAddress(item.to) && isAddress(item.tokenContract) &&
-    typeof item.rawAmount === "string" && /^[0-9]+$/.test(item.rawAmount) &&
-    typeof item.amount === "string" &&
-    /^[0-9]+(?:\.[0-9]+)?$/.test(item.amount) &&
-    typeof item.threshold === "string" && /^[0-9]+(?:\.[0-9]+)?$/.test(item.threshold) &&
-    Number.isSafeInteger(item.blockNumber) && Number(item.blockNumber) >= 0 &&
-    typeof item.blockTimestamp === "string" && !Number.isNaN(Date.parse(item.blockTimestamp)) &&
-    Number.isSafeInteger(item.logIndex) && Number(item.logIndex) >= 0 &&
-    typeof item.transactionHash === "string" &&
-    /^0x[0-9a-fA-F]{64}$/.test(item.transactionHash) &&
-    item.transactionStatus === "success" &&
-    (item.transferType === "mint" || item.transferType === "burn" || item.transferType === "normal") &&
-    typeof item.detectedAt === "string" && !Number.isNaN(Date.parse(item.detectedAt))
-  );
-}
-
-function isAddress(value: unknown): value is string {
-  return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
-}
-
-function shorten(value: string) {
-  return `${value.slice(0, 6)}…${value.slice(-4)}`;
-}
-
-function formatInteger(value: string) {
-  return value.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
-
-function formatDecimal(value: string) {
-  const [whole, fraction] = value.split(".");
-  const formattedWhole = formatInteger(whole);
-  return fraction ? `${formattedWhole}.${fraction}` : formattedWhole;
-}
-
-function formatDuration(totalSeconds: number) {
-  const seconds = Math.max(0, Math.floor(totalSeconds));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ${minutes % 60}m`;
-  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
-}
-
-function formatRelativeAge(timestamp: string, now: Date) {
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((now.getTime() - Date.parse(timestamp)) / 1000),
-  );
-
-  if (elapsedSeconds < 10) return "Just now";
-  if (elapsedSeconds < 60) return `${elapsedSeconds}s ago`;
-
-  const minutes = Math.floor(elapsedSeconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  return `${Math.floor(hours / 24)}d ago`;
 }
