@@ -41,6 +41,7 @@ Install:
   is pinned to `1.15.8`);
 - Node.js 24 or newer and Corepack;
 - Docker with Buildx;
+- Conftest `0.71.1` and the GitHub CLI (`gh`);
 - `jq`, `curl`, `grep`, and `dig`;
 - access to a DNS zone for the public hostname;
 - an Ethereum mainnet JSON-RPC URL; and
@@ -60,6 +61,8 @@ terraform version
 node --version
 corepack pnpm --version
 docker buildx version
+conftest --version
+gh --version
 jq --version
 ```
 
@@ -722,13 +725,117 @@ curl -fsS "https://${DOMAIN_NAME}/api/health" | jq .
 Repeat the fully parameterized smoke command from step 11. Do not invoke the
 script bare unless its defaults have been changed to match your estate.
 
+## 15. Manual IAM configuration (not in Terraform)
+
+These settings live in Google Cloud only. Terraform does not manage them and the
+plan policy check cannot see them.
+
+**Operator storage access.** The basic Owner role reaches bucket settings and
+bucket IAM only through each bucket's default project grants, which the next
+step removes. Grant the operator Storage Admin at project level first, or
+`terraform plan` fails with HTTP 403 on every bucket.
+
+```bash
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="user:<operator-email>" --role="roles/storage.admin" --condition=None
+```
+
+**Default bucket grants.** Google adds six project-convenience grants to every
+new bucket. Remove them from each bucket, including the Terraform state bucket,
+and repeat this for any bucket created later:
+
+```bash
+BUCKET="<bucket-name>"
+for grant in projectOwner:legacyBucketOwner projectEditor:legacyBucketOwner \
+  projectOwner:legacyObjectOwner projectEditor:legacyObjectOwner \
+  projectViewer:legacyBucketReader projectViewer:legacyObjectReader; do
+  gcloud storage buckets remove-iam-policy-binding "gs://${BUCKET}" \
+    --member="${grant%%:*}:${PROJECT_ID}" --role="roles/storage.${grant##*:}"
+done
+```
+
+**Legacy Cloud Build account.** Keep `roles/cloudbuild.builds.builder` on
+`${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com`. Cloud Build uses it to create
+builds from triggers, even though every build runs as a dedicated account;
+without it, triggers register a check on GitHub but never start a build. To
+restore it:
+
+```bash
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  --role="roles/cloudbuild.builds.builder" --condition=None
+```
+
+**Default Compute Engine account.** No workload uses it, but it is Cloud Build's
+default identity for builds that name none. Disable it so such builds fail
+instead of running unmanaged:
+
+```bash
+gcloud iam service-accounts disable "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" --project="$PROJECT_ID"
+```
+
+Re-enable it with `gcloud iam service-accounts enable` and the same arguments.
+
+**Owners.** Keep a single project Owner.
+
+**Planning account.** `planner_impersonators` in `terraform.tfvars` lists who
+may impersonate the read-only planning account, in IAM member form such as
+`user:<operator-email>`. The first apply that creates it runs as the operator.
+
+## 16. GitHub repository settings (not in code)
+
+Configure these on GitHub. They are not stored in the repository.
+
+**Ruleset `protect-main`** (Settings → Rules → Rulesets → New branch ruleset):
+target the default branch, enforcement active, no bypass actors. Enable
+restrict deletions, block force pushes, require a pull request (zero approvals,
+squash merge only), and require status checks with **Require branches to be up
+to date** on:
+
+- `swm-test-verify (swm-gcp-test-v2)` from the **Google Cloud Build** app
+- `terraform-plan-policy` from **GitHub Actions**, added after its first run
+
+**Deployment-specific:** the Cloud Build check name includes the project ID.
+
+**Ruleset `protect-release-tags`** (New tag ruleset): include
+`refs/tags/release-test-*`, enforcement active, no bypass actors. Enable restrict
+updates, restrict deletions, and block force pushes. A deployed release tag can
+then not be moved.
+
+**Release immutability** (Settings → General): enable it. It protects published
+GitHub Releases; the `release-test-*` deploy tags rely on the tag ruleset.
+
+**Actions** (Settings → Actions → General): read-only default workflow
+permissions, approval required for workflows from all outside collaborators,
+and full-length commit SHA pinning required for actions.
+
+**Variables and secret** for the plan policy check. All three values are
+deployment-specific:
+
+```bash
+gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER --body "$(terraform -chdir="$TF_DIR" output -raw github_workload_identity_provider)"
+gh variable set GCP_PLANNER_SERVICE_ACCOUNT --body "$(terraform -chdir="$TF_DIR" output -raw planner_service_account_email)"
+gh secret set TF_VARS_TEST < "$TF_DIR/terraform.tfvars"
+```
+
 ## Ongoing operations
 
 ### Application release
 
-Push reviewed code to `main`. CI runs automatically for a real push. After CI
-succeeds, create and push a new `release-test-*` tag, review the pending CD
-build, and approve it. Terraform is not part of application releases.
+Open a pull request against `main`. The `protect-main` ruleset allows a squash
+merge only after `swm-test-verify (swm-gcp-test-v2)` and `terraform-plan-policy`
+pass. The merge starts CI. After CI succeeds, create and push a new
+`release-test-*` tag, review the pending CD build, and approve it. Terraform is
+not part of application releases.
+
+After the merge, return the local checkout to the merged state. `reset --hard`
+discards uncommitted work, so `git status --short` must print nothing first.
+
+```bash
+git switch main
+git fetch origin
+git reset --hard origin/main
+```
 
 `application_image` is a bootstrap value after initial creation. Terraform
 ignores container image changes on the API, alerter, and indexer so CD can own
@@ -736,18 +843,45 @@ deployed versions without state access.
 
 ### Infrastructure change
 
-Run from the repository root:
+Plan as the read-only planning service account, check the saved plan against
+the policies, then apply that exact plan as yourself. Run from the repository
+root:
 
 ```bash
 terraform fmt -recursive infra
 git diff --check
 terraform -chdir="$TF_DIR" validate
-terraform -chdir="$TF_DIR" plan -input=false -out=/tmp/swm-change.tfplan
-terraform -chdir="$TF_DIR" apply /tmp/swm-change.tfplan
 ```
 
-Apply the saved plan that was reviewed; do not regenerate it between review and
-apply. Commit and push the infrastructure source after verification.
+```bash
+export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT="$(terraform -chdir="$TF_DIR" output -raw planner_service_account_email)"
+terraform -chdir="$TF_DIR" plan -input=false -lock=false -out=/tmp/swm-change.tfplan
+terraform -chdir="$TF_DIR" show -json /tmp/swm-change.tfplan > /tmp/swm-change.json
+conftest test /tmp/swm-change.json --policy policy/terraform --all-namespaces
+```
+
+The planning account reads state but cannot take the state lock, so plans run
+with `-lock=false`. If state changes after the plan was saved, the apply rejects
+it as stale; plan again.
+
+Review the plan, then apply it as yourself and delete the plan files, which can
+contain sensitive values:
+
+```bash
+unset GOOGLE_IMPERSONATE_SERVICE_ACCOUNT
+terraform -chdir="$TF_DIR" apply /tmp/swm-change.tfplan
+rm /tmp/swm-change.tfplan /tmp/swm-change.json
+```
+
+Commit the change through a pull request.
+
+- An apply that creates a custom role and grants it in the same run can fail
+  with `does not exist in the resource's hierarchy` while the role propagates.
+  Plan and apply again.
+- When a change adds permissions the planning account needs to plan it, plan as
+  yourself: skip the `export` line.
+- Changes the `lifecycle` policy refuses, such as deleting or replacing a bucket,
+  are applied this way deliberately. Record the reason in the pull request.
 
 ### Drift check
 
@@ -757,6 +891,38 @@ terraform -chdir="$TF_DIR" plan -input=false -detailed-exitcode
 
 Exit code `0` means no diff, `2` means a non-empty plan, and `1` means an error.
 Image differences are intentionally absent because CD owns those fields.
+
+### Terraform plan policy check
+
+Every pull request to `main` runs the `terraform-plan-policy` check
+(`.github/workflows/terraform-plan.yml`). When the pull request changes
+`infra/`, `policy/`, or the workflow, the check signs in as the read-only
+planning service account through Workload Identity Federation, plans
+`infra/environments/test` without the state lock, and evaluates the plan with
+the Conftest policies in `policy/terraform`. Other pull requests pass
+immediately. Plan output stays out of the public log; the job summary shows the
+plan line, the plan's SHA-256, the policy revision, and each policy result.
+
+The check reads its inputs from the `TF_VARS_TEST` secret and two repository
+variables (see step 16). Update `TF_VARS_TEST` whenever `terraform.tfvars`
+changes; otherwise the check plans with stale inputs. Applies are unaffected:
+they always run locally.
+
+Run the policy tests after changing anything in `policy/terraform`:
+
+```bash
+conftest verify --policy policy/terraform
+```
+
+When the check fails:
+
+- Each `FAIL` line names the policy and the resource address. Fix the
+  configuration, or change the policy and its test in the same pull request.
+- `lifecycle` failures block deleting or replacing buckets, secrets, the image
+  repository, identity pools and providers, and custom roles. To make such a
+  change deliberately, apply a reviewed saved plan locally and record the reason.
+- A fork pull request that changes infrastructure fails by design. Resubmit it
+  from a branch in this repository.
 
 ### Secret rotation
 
