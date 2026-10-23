@@ -350,7 +350,7 @@ Application releases do not run Terraform. CI publishes an immutable image
 digest, frontend archive, checksum, and manifest for the commit. A matching
 release tag creates a pending CD build, and an owner-approved deployment applies
 that already-built release. Terraform remains the owner of infrastructure and
-non-image workload configuration.
+non-image workload configuration...
 
 ## Historical context
 
