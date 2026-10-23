@@ -35,6 +35,11 @@ resource "google_project_iam_custom_role" "plan_reader" {
     "certificatemanager.dnsauthorizations.get",
 
     "logging.logMetrics.get",
+    "logging.buckets.get",
+    "logging.sinks.get",
+    "logging.exclusions.get",
+    "logging.views.get",
+    "logging.views.getIamPolicy",
     "monitoring.alertPolicies.get",
     "monitoring.notificationChannels.get",
     "monitoring.uptimeCheckConfigs.get",
