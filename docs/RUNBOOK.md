@@ -39,7 +39,7 @@ Install:
 - Google Cloud CLI (`gcloud`);
 - Terraform `1.15.8` (the configuration accepts `>= 1.5.0`, while Cloud Build
   is pinned to `1.15.8`);
-- Node.js 20 or newer and Corepack;
+- Node.js 24 or newer and Corepack;
 - Docker with Buildx;
 - `jq`, `curl`, `grep`, and `dig`;
 - access to a DNS zone for the public hostname;
@@ -764,6 +764,46 @@ Add a new version with the same no-history prompt used in step 6. Cloud Run
 references `latest`, but an existing instance does not automatically reload the
 new payload. Deploy a new revision or restart/update the consuming workload,
 verify it, and only then disable the old secret version.
+
+### Runtime and dependency maintenance
+
+Do this monthly, and whenever a security advisory affects Node.js or a
+dependency.
+
+1. Check the [Node.js release schedule](https://nodejs.org/en/about/previous-releases).
+   The application runs on Node.js 24 LTS. Move to the next LTS line before the
+   current one leaves maintenance, and raise `engines.node` in both
+   `package.json` files to match.
+2. Refresh the pinned image digests. The `Dockerfile` and every Node step in
+   `cloudbuild/cloudbuild-verify.yaml` and `cloudbuild/cloudbuild-ci.yaml` use
+   the same `node:24-bookworm-slim@sha256:…` reference; the Terraform steps pin
+   `hashicorp/terraform:1.15.8@sha256:…`. Resolve the current digests:
+
+   ```bash
+   docker buildx imagetools inspect node:24-bookworm-slim
+   docker buildx imagetools inspect hashicorp/terraform:1.15.8
+   ```
+
+   Replace each digest with the `Digest:` value printed for the index.
+3. Update dependencies within their current major versions, then list what
+   remains:
+
+   ```bash
+   pnpm update
+   pnpm --dir frontend update
+   pnpm outdated
+   pnpm --dir frontend outdated
+   ```
+
+   Treat each remaining major upgrade as its own reviewed change.
+4. Review known vulnerabilities:
+
+   ```bash
+   pnpm audit
+   pnpm --dir frontend audit
+   ```
+
+5. Run the local checks from step 1, push to `main`, and release as usual.
 
 ### Rollback
 

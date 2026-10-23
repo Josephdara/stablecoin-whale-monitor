@@ -103,12 +103,9 @@ resource "google_storage_bucket_iam_member" "cd_frontend" {
   member = "serviceAccount:${google_service_account.cd.email}"
 }
 
-# gcloud storage rsync reads bucket metadata before syncing, and objectUser is
-# objects-only. legacyBucketReader is the narrowest role carrying
-# storage.buckets.get — 7 permissions, still scoped to this one bucket.
 resource "google_storage_bucket_iam_member" "cd_frontend_bucket_reader" {
   bucket = var.frontend_bucket_name
-  role   = "roles/storage.legacyBucketReader"
+  role   = google_project_iam_custom_role.bucket_metadata_reader.id
   member = "serviceAccount:${google_service_account.cd.email}"
 }
 
@@ -125,6 +122,14 @@ resource "google_cloud_run_v2_service_iam_member" "cd_services" {
   member   = "serviceAccount:${google_service_account.cd.email}"
 }
 
+
+resource "google_project_iam_custom_role" "bucket_metadata_reader" {
+  project     = var.project_id
+  role_id     = "swmBucketMetadataReader"
+  title       = "SWM bucket metadata reader"
+  description = "Read bucket metadata. Required by gcloud storage rsync."
+  permissions = ["storage.buckets.get"]
+}
 
 resource "google_project_iam_custom_role" "run_operations_reader" {
   project     = var.project_id
