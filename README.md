@@ -227,7 +227,7 @@ Terraform creates email-backed policies for:
 
 Indexer progress is evaluated per Worker Pool rather than per revision. A new
 revision therefore does not leave an obsolete time series with an incident that
-cannot close.
+cannot close..
 
 ## Repository layout
 
