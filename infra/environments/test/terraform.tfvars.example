@@ -95,3 +95,6 @@ alert_email_to = "recipient@example.com"
 # Deployment-specific.
 terraform_state_bucket_name = "replace-with-terraform-state-bucket"
 planner_impersonators       = ["user:replace-with-operator@example.com"]
+github_repository_id        = "replace-with-numeric-repository-id"
+github_repository_owner_id  = "replace-with-numeric-owner-id"
+github_plan_workflow        = "owner/repo/.github/workflows/terraform-plan.yml"

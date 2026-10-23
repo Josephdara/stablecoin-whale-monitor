@@ -279,6 +279,9 @@ module "terraform_planner" {
   planner_service_account_id  = var.planner_service_account_id
   terraform_state_bucket_name = var.terraform_state_bucket_name
   planner_impersonators       = var.planner_impersonators
+  github_repository_id        = var.github_repository_id
+  github_repository_owner_id  = var.github_repository_owner_id
+  github_plan_workflow        = var.github_plan_workflow
 
   depends_on = [module.project-services]
 }

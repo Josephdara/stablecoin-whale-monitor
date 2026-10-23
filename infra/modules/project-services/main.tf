@@ -5,6 +5,7 @@ locals {
     "serviceusage.googleapis.com",         # Service Usage
     "iam.googleapis.com",                  # Identity and Access Management (IAM)
     "iamcredentials.googleapis.com",       # IAM Service Account Credentials API
+    "sts.googleapis.com",                  # Security Token Service (Workload Identity Federation)
     "artifactregistry.googleapis.com",     # Artifact Registry
     "cloudbuild.googleapis.com",           # Cloud Build
     "run.googleapis.com",                  # Cloud Run
