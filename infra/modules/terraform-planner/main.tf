@@ -18,6 +18,7 @@ resource "google_project_iam_custom_role" "plan_reader" {
     "iam.serviceAccounts.get",
     "iam.serviceAccounts.getIamPolicy",
     "iam.workloadIdentityPools.get",
+    "iam.workloadIdentityPools.getAttestationRules",
     "iam.workloadIdentityPoolProviders.get",
     "serviceusage.services.get",
     "serviceusage.services.list",

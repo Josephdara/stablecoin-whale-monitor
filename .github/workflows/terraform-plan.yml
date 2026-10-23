@@ -1,0 +1,144 @@
+# Plans infrastructure pull requests as the read-only planning identity and
+# evaluates the plan against policy/terraform. The repository is public, so
+# plan output, plan files, and inputs never reach the log or artifacts.
+name: Terraform plan
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TF_DIR: infra/environments/test
+  TF_IN_AUTOMATION: "true"
+  TERRAFORM_VERSION: 1.15.8
+  CONFTEST_VERSION: 0.71.1
+  CONFTEST_SHA256: c3f6b2a753bd56e377a1e51a95ae3e057f926f2e9139f7d5b5dfbbaf810f7985
+
+jobs:
+  terraform-plan-policy:
+    name: terraform-plan-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Runs on every pull request so the required check never stays pending.
+      - id: scope
+        name: Detect infrastructure changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if git diff --name-only "$BASE_SHA...$HEAD_SHA" | grep -qE '^(infra/|policy/|\.github/workflows/terraform-plan\.yml$)'; then
+            changed=true
+          else
+            changed=false
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          if [ "$changed" = true ] && [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::Infrastructure changes from a fork cannot be planned. Resubmit them from a branch in this repository."
+            exit 1
+          fi
+          if [ "$changed" = false ]; then
+            echo "No infrastructure or policy changes; plan skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - if: steps.scope.outputs.changed == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLANNER_SERVICE_ACCOUNT }}
+
+      - if: steps.scope.outputs.changed == 'true'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - if: steps.scope.outputs.changed == 'true'
+        name: Write Terraform inputs
+        env:
+          TF_VARS: ${{ secrets.TF_VARS_TEST }}
+        run: |
+          if [ -z "$TF_VARS" ]; then
+            echo "::error::The TF_VARS_TEST secret is not set."
+            exit 1
+          fi
+          printf '%s\n' "$TF_VARS" > "$RUNNER_TEMP/test.tfvars"
+
+      - if: steps.scope.outputs.changed == 'true'
+        name: Plan
+        run: |
+          if ! terraform -chdir="$TF_DIR" init -input=false -no-color > "$RUNNER_TEMP/init.log" 2>&1; then
+            grep -A4 'Error:' "$RUNNER_TEMP/init.log" || tail -n 20 "$RUNNER_TEMP/init.log"
+            exit 1
+          fi
+          if ! terraform -chdir="$TF_DIR" plan -input=false -lock=false -no-color \
+            -var-file="$RUNNER_TEMP/test.tfvars" -out="$RUNNER_TEMP/plan.tfplan" > "$RUNNER_TEMP/plan.log" 2>&1; then
+            grep -A4 'Error:' "$RUNNER_TEMP/plan.log"
+            exit 1
+          fi
+          grep -E '^(Plan:|No changes)' "$RUNNER_TEMP/plan.log"
+          terraform -chdir="$TF_DIR" show -json "$RUNNER_TEMP/plan.tfplan" > "$RUNNER_TEMP/plan.json"
+
+      - if: steps.scope.outputs.changed == 'true'
+        name: Install Conftest
+        run: |
+          archive="conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archive" \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/${archive}"
+          echo "${CONFTEST_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" conftest
+
+      - if: steps.scope.outputs.changed == 'true'
+        name: Policy check
+        run: |
+          "$RUNNER_TEMP/conftest" verify --policy policy/terraform --no-color
+          "$RUNNER_TEMP/conftest" test "$RUNNER_TEMP/plan.json" --policy policy/terraform \
+            --all-namespaces --no-color | tee "$RUNNER_TEMP/policy.txt"
+
+      - if: always() && steps.scope.outputs.changed == 'true'
+        name: Summary
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          plan_digest=unavailable
+          if [ -f "$RUNNER_TEMP/plan.tfplan" ]; then
+            plan_digest=$(sha256sum "$RUNNER_TEMP/plan.tfplan" | cut -d' ' -f1)
+          fi
+          {
+            echo "### Terraform plan policy"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Pull request head | \`$HEAD_SHA\` |"
+            echo "| Evaluated merge commit | \`$GITHUB_SHA\` |"
+            echo "| Environment | \`$TF_DIR\` |"
+            echo "| Policy revision | \`$(git rev-parse HEAD:policy/terraform)\` |"
+            echo "| Plan SHA-256 | \`$plan_digest\` |"
+            echo "| Plan | $(grep -hE '^(Plan:|No changes)' "$RUNNER_TEMP/plan.log" 2>/dev/null || echo unavailable) |"
+            echo ""
+            echo '```'
+            cat "$RUNNER_TEMP/policy.txt" 2>/dev/null || echo "Policy check did not run."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - if: always()
+        name: Remove plan files and inputs
+        run: rm -f "$RUNNER_TEMP"/test.tfvars "$RUNNER_TEMP"/plan.tfplan "$RUNNER_TEMP"/plan.json "$RUNNER_TEMP"/*.log
