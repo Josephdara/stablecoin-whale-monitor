@@ -131,3 +131,8 @@ output "planner_service_account_email" {
   description = "Read-only identity impersonated for terraform plan."
   value       = module.terraform_planner.planner_service_account_email
 }
+
+output "github_workload_identity_provider" {
+  description = "Provider resource name for the plan workflow's authentication step."
+  value       = module.terraform_planner.github_workload_identity_provider
+}

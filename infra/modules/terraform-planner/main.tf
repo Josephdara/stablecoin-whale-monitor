@@ -17,6 +17,8 @@ resource "google_project_iam_custom_role" "plan_reader" {
     "iam.roles.get",
     "iam.serviceAccounts.get",
     "iam.serviceAccounts.getIamPolicy",
+    "iam.workloadIdentityPools.get",
+    "iam.workloadIdentityPoolProviders.get",
     "serviceusage.services.get",
     "serviceusage.services.list",
 
@@ -66,4 +68,44 @@ resource "google_service_account_iam_member" "planner_impersonators" {
   service_account_id = google_service_account.planner.name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = each.value
+}
+
+resource "google_iam_workload_identity_pool" "github" {
+  project                   = var.project_id
+  workload_identity_pool_id = "github"
+  display_name              = "GitHub Actions"
+  description               = "Short-lived credentials for the Terraform plan workflow."
+}
+
+# Numeric IDs survive a repository rename or recreation under the same name.
+resource "google_iam_workload_identity_pool_provider" "github_actions" {
+  project                            = var.project_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github-actions"
+  display_name                       = "GitHub Actions OIDC"
+
+  attribute_mapping = {
+    "google.subject"                = "assertion.sub"
+    "attribute.repository_id"       = "assertion.repository_id"
+    "attribute.repository_owner_id" = "assertion.repository_owner_id"
+    "attribute.event_name"          = "assertion.event_name"
+    "attribute.workflow_ref"        = "assertion.workflow_ref"
+  }
+
+  attribute_condition = join(" && ", [
+    "assertion.repository_id == '${var.github_repository_id}'",
+    "assertion.repository_owner_id == '${var.github_repository_owner_id}'",
+    "assertion.event_name == 'pull_request'",
+    "assertion.workflow_ref.startsWith('${var.github_plan_workflow}@')",
+  ])
+
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+resource "google_service_account_iam_member" "planner_github" {
+  service_account_id = google_service_account.planner.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository_id/${var.github_repository_id}"
 }
