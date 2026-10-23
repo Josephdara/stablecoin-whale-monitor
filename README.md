@@ -113,7 +113,7 @@ Terraform execution and state mutation are operator-controlled locally, while
 the authoritative state is stored remotely in a versioned GCS backend with
 uniform bucket-level access and public access prevention. Pipeline identities
 cannot read or write Terraform state. This keeps application delivery separate
-from infrastructure authority.
+from infrastructure authority...
 
 ## Storage and correctness model
 
