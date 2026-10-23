@@ -524,6 +524,23 @@ variable "api_rate_limit_interval_seconds" {
   default     = 60
 }
 
+variable "api_log_sample_rate" {
+  description = "Fraction of API requests written to load balancer logs. Keep at 1 while tuning Cloud Armor rules."
+  type        = number
+  default     = 1
+}
+
+variable "security_log_retention_days" {
+  description = "Retention for the security log bucket."
+  type        = number
+  default     = 365
+}
+
+variable "security_log_readers" {
+  description = "Principals granted read access to the security log view, in IAM member form. Required so a CI plan without it fails instead of planning the grant's removal."
+  type        = list(string)
+}
+
 
 variable "verify_service_account_id" {
   description = "Account ID for the PR verification identity. Environment-neutral: service accounts are project-scoped."

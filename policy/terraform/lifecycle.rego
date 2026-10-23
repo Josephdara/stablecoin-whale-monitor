@@ -7,6 +7,9 @@ protected_types := {
 	"google_iam_workload_identity_pool",
 	"google_iam_workload_identity_pool_provider",
 	"google_project_iam_custom_role",
+	"google_logging_project_bucket_config",
+	"google_logging_project_sink",
+	"google_project_iam_audit_config",
 }
 
 deny contains msg if {

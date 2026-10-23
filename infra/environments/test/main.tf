@@ -210,6 +210,7 @@ module "edge" {
   api_security_policy_name        = var.api_security_policy_name
   api_rate_limit_requests         = var.api_rate_limit_requests
   api_rate_limit_interval_seconds = var.api_rate_limit_interval_seconds
+  api_log_sample_rate             = var.api_log_sample_rate
 
   services_paused = local.services_paused
 }
@@ -237,6 +238,27 @@ module "monitoring" {
   indexer_worker_pool_name = module.cloud_run.indexer_worker_pool_name
 
   services_paused = local.services_paused
+}
+
+module "security_logging" {
+  source = "../../modules/security-logging"
+
+  project_id     = var.project_id
+  environment    = var.environment
+  name_prefix    = var.name_prefix
+  location       = var.region
+  retention_days = var.security_log_retention_days
+
+  security_log_readers = var.security_log_readers
+  workload_service_account_emails = [
+    module.iam.api_service_account_email,
+    module.iam.indexer_service_account_email,
+  ]
+
+  notification_channel_id  = module.monitoring.notification_channel_id
+  api_backend_service_name = module.edge.api_backend_service_name
+
+  depends_on = [module.project-services]
 }
 
 module "cloud_build" {
