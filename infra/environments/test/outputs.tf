@@ -126,3 +126,8 @@ output "build_artifacts_bucket" {
   description = "Release archive location, substituted into the CI and CD pipelines."
   value       = module.cloud_build.artifacts_bucket_name
 }
+
+output "planner_service_account_email" {
+  description = "Read-only identity impersonated for terraform plan."
+  value       = module.terraform_planner.planner_service_account_email
+}

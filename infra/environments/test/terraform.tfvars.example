@@ -91,3 +91,7 @@ api_rate_limit_interval_seconds = 60
 # alert_email_to remains active as the recipient for API/indexer monitoring.
 alert_email_to = "recipient@example.com"
 # alert_email_from       = "sender@gmail.com"
+
+# Deployment-specific.
+terraform_state_bucket_name = "replace-with-terraform-state-bucket"
+planner_impersonators       = ["user:replace-with-operator@example.com"]

@@ -271,3 +271,14 @@ module "cloud_build" {
 
   force_destroy = var.storage_force_destroy
 }
+
+module "terraform_planner" {
+  source = "../../modules/terraform-planner"
+
+  project_id                  = var.project_id
+  planner_service_account_id  = var.planner_service_account_id
+  terraform_state_bucket_name = var.terraform_state_bucket_name
+  planner_impersonators       = var.planner_impersonators
+
+  depends_on = [module.project-services]
+}

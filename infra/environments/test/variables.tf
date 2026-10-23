@@ -542,3 +542,20 @@ variable "cd_service_account_id" {
   type        = string
   default     = "swm-cloud-build-cd"
 }
+
+variable "planner_service_account_id" {
+  description = "Account ID for the read-only Terraform planning identity."
+  type        = string
+  default     = "swm-terraform-plan"
+}
+
+variable "terraform_state_bucket_name" {
+  description = "Bucket holding Terraform state. Must match the bucket in backend.tf."
+  type        = string
+}
+
+variable "planner_impersonators" {
+  description = "Principals allowed to impersonate the Terraform planner."
+  type        = list(string)
+  default     = []
+}
