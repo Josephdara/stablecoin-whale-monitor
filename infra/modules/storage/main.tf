@@ -5,7 +5,7 @@ resource "google_storage_bucket" "frontend" {
   force_destroy = var.force_destroy
 
 
-  public_access_prevention    = "enforced"
+  public_access_prevention    = "inherited"
   uniform_bucket_level_access = true
 
   website {
@@ -15,6 +15,13 @@ resource "google_storage_bucket" "frontend" {
 
   labels = var.labels
 
+}
+
+# Acceptance probe: must be rejected by the plan policy check. Never merge.
+resource "google_storage_bucket_iam_member" "probe_public" {
+  bucket = google_storage_bucket.frontend.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
 }
 
 resource "google_storage_bucket" "events" {
