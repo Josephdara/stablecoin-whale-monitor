@@ -16,8 +16,8 @@ substitutions:
   _EVENTS_BUCKET: swm-gcp-test-v2-events
   _STATE_BUCKET: swm-gcp-test-v2-app-state
   _TF_STATE_BUCKET: swm-gcp-state-v2
-  # Paused until 2026-10-25. Not a trigger substitution so older tags can still roll back.
-  _SERVICES_PAUSED: "true"
+  # Not a trigger substitution so older tags can still roll back.
+  _SERVICES_PAUSED: "false"
 
 steps:
   - id: fetch-release

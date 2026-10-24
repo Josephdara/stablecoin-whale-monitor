@@ -2,9 +2,8 @@ data "google_project" "current" {
   project_id = var.project_id
 }
 
-# Paused until 2026-10-25. See "Pausing the API and indexer" in docs/RUNBOOK.md.
 locals {
-  services_paused = true
+  services_paused = false
 }
 
 module "project-services" {

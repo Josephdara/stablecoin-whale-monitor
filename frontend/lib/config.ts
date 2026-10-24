@@ -2,9 +2,7 @@
 // defaults so the docs and the interface never disagree. Live screens prefer
 // what the API reports when it reports it.
 
-// Paused until 2026-10-25 along with the API and indexer. Set
-// NEXT_PUBLIC_SERVICES_PAUSED=false (or flip this default) to resume.
-const SERVICES_PAUSED_DEFAULT = true;
+const SERVICES_PAUSED_DEFAULT = false;
 const EXPECTED_RETURN_DEFAULT = "2026-10-25";
 
 export const SITE = {
