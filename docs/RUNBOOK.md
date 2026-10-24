@@ -242,6 +242,7 @@ Edit `infra/environments/test/terraform.tfvars` and set at least:
 | `alert_email_to` | recipient of whale-alert emails |
 | `alert_email_from` | Gmail account that owns the app password |
 | `start_block` | set immediately before the first Worker Pool creation |
+| `security_log_readers` | principals that read the security log bucket, such as `["user:<operator-email>"]` |
 
 Remove the `zone` line from the example-derived file; the test root module does
 not declare a `zone` variable. Leave `application_image = ""` until step 7.
@@ -782,6 +783,32 @@ Re-enable it with `gcloud iam service-accounts enable` and the same arguments.
 may impersonate the read-only planning account, in IAM member form such as
 `user:<operator-email>`. The first apply that creates it runs as the operator.
 
+**Billing budget.** The budget lives on the billing account, outside Terraform,
+so the planning account needs no billing access. A billing account administrator
+grants the operator Billing Account Costs Manager:
+
+```bash
+gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT_ID" \
+  --member="user:<operator-email>" --role="roles/billing.costsManager"
+```
+
+Enable the Budget API and find the alert channel's resource name:
+
+```bash
+gcloud services enable billingbudgets.googleapis.com --project="$PROJECT_ID"
+gcloud beta monitoring channels list --project="$PROJECT_ID" --format="value(name,displayName)"
+```
+
+Create the budget. **Deployment-specific:** the amount and the channel name.
+
+```bash
+gcloud billing budgets create --billing-account="$BILLING_ACCOUNT_ID" \
+  --display-name="SWM test monthly" --budget-amount=<amount>USD \
+  --filter-projects="projects/${PROJECT_ID}" \
+  --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0 \
+  --notifications-rule-monitoring-notification-channels="<channel-name>"
+```
+
 ## 16. GitHub repository settings (not in code)
 
 Configure these on GitHub. They are not stored in the repository.
@@ -924,6 +951,70 @@ When the check fails:
 - A fork pull request that changes infrastructure fails by design. Resubmit it
   from a branch in this repository.
 
+### Security logs and alerts
+
+The `security-logging` module configures:
+
+- Data Access audit logs for Secret Manager reads and Cloud Storage reads.
+  Storage reads by the API and indexer service accounts are exempt.
+- Request logs on the API backend at `api_log_sample_rate` (default `1`),
+  including each Cloud Armor decision.
+- The log bucket `<name_prefix>-security` in the deployment region, with
+  `security_log_retention_days` (default 365) and no retention lock. A sink
+  routes every audit log and each Cloud Armor denial on the API backend into it.
+  An exclusion keeps Data Access logs out of `_Default`, so each entry is stored
+  once.
+- The `security-readers` log view, readable by `security_log_readers`.
+
+**Deployment-specific:** the bucket name is built from `name_prefix`.
+
+Read the security bucket:
+
+```bash
+gcloud logging read '<filter>' --project="$PROJECT_ID" \
+  --bucket="${NAME_PREFIX}-security" --location="$REGION" --view=security-readers \
+  --freshness=1d --limit=20
+```
+
+| To find | Filter |
+| --- | --- |
+| IAM and audit-config changes | `protoPayload.methodName=~"(?i)setiampolicy$" OR protoPayload.methodName="storage.setIamPermissions"` |
+| Secret reads | `protoPayload.methodName:"AccessSecretVersion"` |
+| Cloud Armor denials | `jsonPayload.enforcedSecurityPolicy.outcome="DENY"` |
+
+Alerts go to the monitoring email channel:
+
+| Alert | Fires on |
+| --- | --- |
+| IAM policy or audit config changed | Any `setIamPolicy` call, including bucket IAM |
+| Custom IAM role changed | Create, update, delete, or undelete of a custom role |
+| Service-account key created | Key creation or upload |
+| Workload Identity Federation changed | Any change to a pool or provider |
+| Log routing or retention changed | Any change to sinks, log buckets, exclusions, views, or logging settings |
+| Cloud Armor policy or attachment changed | Security policy or rule changes, and attaching or detaching a policy |
+| Cloud Armor denials high | More than `armor_denied_threshold` (default 100) logged denials in 5 minutes |
+
+Each change alert sends at most one email per 5 minutes and names the principal
+and method. Match it to a reviewed apply or a recorded manual change; your own
+applies trigger these alerts too. If nothing matches, read the entry in the
+security bucket and revert the change. For denial alerts, the entry's
+`jsonPayload.enforcedSecurityPolicy.priority` names the rule; priority `1000` is
+the per-IP rate limit. Logged denial counts scale with the sample rate.
+
+Check Data Access volume a day after enabling it, and after adding workloads:
+
+```bash
+gcloud logging read 'logName:"cloudaudit.googleapis.com%2Fdata_access"' \
+  --project="$PROJECT_ID" --bucket="${NAME_PREFIX}-security" --location="$REGION" \
+  --view=security-readers --freshness=1d \
+  --format="value(protoPayload.authenticationInfo.principalEmail)" | sort | uniq -c | sort -rn
+```
+
+The workload accounts must not appear. If the load balancer cache-fill agent
+(`service-<project-number>@https-lb.iam.gserviceaccount.com`) dominates, add it to
+`workload_service_account_emails` in the `security_logging` module call. Ingested
+bytes per bucket are under **Logging → Log storage** in the console.
+
 ### Secret rotation
 
 Add a new version with the same no-history prompt used in step 6. Cloud Run
@@ -1023,10 +1114,14 @@ terraform -chdir="$TF_DIR" apply /tmp/swm-destroy.tfplan
 `storage_force_destroy = true` permits Terraform to remove non-empty application
 and build-artifact buckets. Use it only for a disposable environment.
 
+A destroyed log bucket stays pending deletion for 7 days, and its name cannot be
+reused until then.
+
 The following are outside Terraform and survive:
 
 - the Cloud Build linked repository and GitHub connection;
-- the remote Terraform-state bucket and its object versions; and
+- the remote Terraform-state bucket and its object versions;
+- the billing budget; and
 - the Google Cloud project itself.
 
 Delete those manually only after confirming the estate and recovery history are
@@ -1051,8 +1146,10 @@ usually the cleanest final action.
 - Indexer progress counts committed ranges and caught-up cycles and aggregates
   per Worker Pool, preventing old revisions from leaving uncloseable incidents.
 - Terraform commands and state mutations are operator-controlled locally; the
-  authoritative state is stored remotely in the secured GCS backend. No
-  pipeline identity can read or write it.
+  authoritative state is stored remotely in the secured GCS backend. The
+  read-only planning account, used by local plans and the pull request plan
+  check, can read state but cannot write it or take the lock. No build or
+  deploy identity can access state.
 
 ## Deploying to production
 
