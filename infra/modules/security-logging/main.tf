@@ -44,14 +44,14 @@ resource "google_project_iam_audit_config" "secret_manager" {
   }
 }
 
-# Workload reads are constant and expected; logging them would dominate volume and cost.
+# Workload and load balancer cache-fill reads are constant and expected; logging them would dominate volume and cost.
 resource "google_project_iam_audit_config" "storage" {
   project = var.project_id
   service = "storage.googleapis.com"
 
   audit_log_config {
     log_type         = "DATA_READ"
-    exempted_members = [for email in var.workload_service_account_emails : "serviceAccount:${email}"]
+    exempted_members = [for email in var.storage_read_exempt_emails : "serviceAccount:${email}"]
   }
 }
 

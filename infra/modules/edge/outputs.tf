@@ -37,3 +37,8 @@ output "assets_backend_bucket_name" {
   description = "One-year TTL backend bucket for /_next/static/*."
   value       = google_compute_backend_bucket.assets.name
 }
+
+output "cache_fill_agent_email" {
+  description = "Load balancer service agent that reads the frontend bucket on cache misses."
+  value       = trimprefix(local.cache_fill_agent, "serviceAccount:")
+}

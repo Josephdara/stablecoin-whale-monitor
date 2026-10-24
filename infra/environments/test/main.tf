@@ -249,9 +249,10 @@ module "security_logging" {
   retention_days = var.security_log_retention_days
 
   security_log_readers = var.security_log_readers
-  workload_service_account_emails = [
+  storage_read_exempt_emails = [
     module.iam.api_service_account_email,
     module.iam.indexer_service_account_email,
+    module.edge.cache_fill_agent_email,
   ]
 
   notification_channel_id  = module.monitoring.notification_channel_id

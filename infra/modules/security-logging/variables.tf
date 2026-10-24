@@ -28,8 +28,8 @@ variable "security_log_readers" {
   type        = list(string)
 }
 
-variable "workload_service_account_emails" {
-  description = "Workload identities exempt from Cloud Storage Data Access logging."
+variable "storage_read_exempt_emails" {
+  description = "Service accounts whose routine reads are exempt from Cloud Storage Data Access logging."
   type        = list(string)
 }
 

@@ -956,7 +956,8 @@ When the check fails:
 The `security-logging` module configures:
 
 - Data Access audit logs for Secret Manager reads and Cloud Storage reads.
-  Storage reads by the API and indexer service accounts are exempt.
+  Storage reads by the API and indexer service accounts and by the load
+  balancer cache-fill agent are exempt.
 - Request logs on the API backend at `api_log_sample_rate` (default `1`),
   including each Cloud Armor decision.
 - The log bucket `<name_prefix>-security` in the deployment region, with
@@ -1010,10 +1011,10 @@ gcloud logging read 'logName:"cloudaudit.googleapis.com%2Fdata_access"' \
   --format="value(protoPayload.authenticationInfo.principalEmail)" | sort | uniq -c | sort -rn
 ```
 
-The workload accounts must not appear. If the load balancer cache-fill agent
-(`service-<project-number>@https-lb.iam.gserviceaccount.com`) dominates, add it to
-`workload_service_account_emails` in the `security_logging` module call. Ingested
-bytes per bucket are under **Logging → Log storage** in the console.
+The accounts in `storage_read_exempt_emails` must not appear: the API, the
+indexer, and the cache-fill agent
+(`service-<project-number>@https-lb.iam.gserviceaccount.com`). Ingested bytes per
+bucket are under **Logging → Log storage** in the console.
 
 ### Secret rotation
 
