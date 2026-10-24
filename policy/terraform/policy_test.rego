@@ -29,12 +29,16 @@ api_public := rc(
 
 viewer := rc("module.p.google_project_iam_member.viewer", "google_project_iam_member", ["create"], {"role": "roles/run.viewer", "member": "serviceAccount:a@b"})
 
+backend := rc("module.edge.google_compute_backend_service.api", "google_compute_backend_service", ["update"], {"log_config": [{"enable": true, "sample_rate": 1}]})
+
+log_bucket := rc("module.security_logging.google_logging_project_bucket_config.security", "google_logging_project_bucket_config", ["update"], {"location": "us-east4"})
+
 plan(changes) := {"format_version": "1.2", "resource_changes": changes}
 
-compliant := plan([bucket, api, api_public, viewer])
+compliant := plan([bucket, api, api_public, viewer, backend, log_bucket])
 
 denials contains msg if {
-	some pkg in ["input_format", "storage", "public_access", "iam", "cloud_run", "location", "lifecycle"]
+	some pkg in ["input_format", "storage", "public_access", "iam", "cloud_run", "location", "lifecycle", "logging"]
 	some msg in data[pkg].deny
 }
 
@@ -74,5 +78,10 @@ test_bucket_outside_region_rejected if {
 
 test_bucket_replacement_rejected if {
 	changed := json.patch(bucket, [{"op": "replace", "path": "/change/actions", "value": ["delete", "create"]}])
+	count(denials) == 1 with input as plan([changed])
+}
+
+test_backend_logging_required if {
+	changed := json.patch(backend, [{"op": "replace", "path": "/change/after/log_config/0/enable", "value": false}])
 	count(denials) == 1 with input as plan([changed])
 }

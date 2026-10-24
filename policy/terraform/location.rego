@@ -9,6 +9,7 @@ regional_types := {
 	"google_cloud_run_v2_service",
 	"google_cloud_run_v2_worker_pool",
 	"google_artifact_registry_repository",
+	"google_logging_project_bucket_config",
 }
 
 managed contains rc if {

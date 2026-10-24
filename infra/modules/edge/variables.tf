@@ -69,6 +69,11 @@ variable "api_rate_limit_interval_seconds" {
   type        = number
 }
 
+variable "api_log_sample_rate" {
+  description = "Fraction of API requests written to load balancer logs, including Cloud Armor decisions. 0 to 1."
+  type        = number
+}
+
 variable "services_paused" {
   description = "Stops routing /api to the API while it is paused. Those paths fall through to the frontend bucket and return 404."
   type        = bool

@@ -157,6 +157,11 @@ resource "google_compute_backend_service" "api" {
   backend {
     group = google_compute_region_network_endpoint_group.api.id
   }
+
+  log_config {
+    enable      = true
+    sample_rate = var.api_log_sample_rate
+  }
 }
 
 
