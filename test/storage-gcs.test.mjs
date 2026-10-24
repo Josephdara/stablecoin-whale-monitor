@@ -58,6 +58,35 @@ test("GCS checkpoint reads are pinned and replacements return their own generati
   assert.deepEqual(written, { generation: "8" });
 });
 
+test("GCS checkpoint read retries when the pinned generation is replaced mid-read", async () => {
+  let generation = 8;
+  const checkpoint = { lastProcessedBlock: 101 };
+  const stateBucket = {
+    file: (_name, options) => options?.generation
+      ? {
+        download: async () => {
+          if (options.generation === "8") {
+            generation = 9;
+            const error = new Error("No such object");
+            error.code = 404;
+            throw error;
+          }
+          return [Buffer.from(JSON.stringify(checkpoint))];
+        },
+      }
+      : { getMetadata: async () => [{ generation }] },
+  };
+  const storageClient = {
+    bucket: (name) => name === "state" ? stateBucket : { file: () => ({}) },
+  };
+  const adapter = new GcsStorageAdapter(
+    { gcsEventsBucket: "events", gcsStateBucket: "state" },
+    storageClient,
+  );
+
+  assert.deepEqual(await adapter.readCheckpoint(), { value: checkpoint, generation: "9" });
+});
+
 test("GCS event iteration is paginated, skips known names, and reads both single-event and NDJSON batch objects", async () => {
   const downloaded = [];
   const file = (name, contents) => ({

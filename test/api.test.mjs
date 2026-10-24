@@ -363,7 +363,7 @@ test("a failed refresh serves a warm index and reports degraded health", async (
     assert.equal(body.status, "degraded");
     assert.equal(body.indexedEvents, 1);
     assert.equal(body.indexError, null);
-    assert.match(body.lastRefreshError, /unreachable/);
+    assert.equal(body.lastRefreshError, "Event index refresh failed");
     assert.deepEqual(
       [body.chainHeadBlock, body.indexThreshold, body.confirmationBuffer, body.pollIntervalSeconds],
       [null, null, null, null],
@@ -474,6 +474,9 @@ test("invalid transfer parameters are rejected before storage refresh", async ()
     const cursor = await request("/api/transfers?cursor=not-base64-json");
     assert.equal(cursor.status, 400);
 
+    const amount = await request(`/api/transfers?minimumAmount=${"1".repeat(31)}`);
+    assert.equal(amount.status, 400);
+
     const transaction = await request("/api/transfers/not-a-transaction-hash");
     assert.equal(transaction.status, 400);
     assert.equal(calls, 0);
@@ -520,6 +523,26 @@ test("transaction lookup and health refresh stale indexes on their request paths
   });
 });
 
+test("unsupported methods, unknown paths and framework errors return JSON without echoing input", async () => {
+  const index = new EventIndex({ listEvents: async () => [] }, 1, 7);
+
+  await withApi({ config: apiConfig(), storage: {}, index }, async (request) => {
+    const method = await request("/api/health", { method: "POST" });
+    assert.equal(method.status, 405);
+    assert.equal(method.headers.get("allow"), "GET, HEAD");
+    assert.equal(method.headers.get("content-security-policy"), "default-src 'none'; frame-ancestors 'none'");
+    assert.deepEqual(await method.json(), { error: "Method not allowed" });
+
+    const unknown = await request("/api/unknown-path");
+    assert.equal(unknown.status, 404);
+    assert.deepEqual(await unknown.json(), { error: "Not found" });
+
+    const malformed = await request("/api/transfers/%E0%A4%A");
+    assert.equal(malformed.status, 400);
+    assert.deepEqual(await malformed.json(), { error: "Invalid request" });
+  });
+});
+
 test("checkpoint read failures return degraded health without invalidating the index", async () => {
   const config = testConfig();
   const event = agedEvent(
@@ -547,7 +570,7 @@ test("checkpoint read failures return degraded health without invalidating the i
     assert.equal(body.status, "degraded");
     assert.equal(body.indexError, null);
     assert.equal(body.lastRefreshError, null);
-    assert.match(body.checkpointError, /unavailable/);
+    assert.equal(body.checkpointError, "Checkpoint read failed");
     assert.equal(body.indexedEvents, 1);
   });
   assert.equal(logs.length, 1);
@@ -628,7 +651,7 @@ async function withApi(options, run) {
   await once(server, "listening");
   try {
     const { port } = server.address();
-    await run((path) => fetch(`http://127.0.0.1:${port}${path}`));
+    await run((path, init) => fetch(`http://127.0.0.1:${port}${path}`, init));
   } finally {
     server.close();
     await once(server, "close");

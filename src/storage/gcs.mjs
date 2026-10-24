@@ -25,16 +25,23 @@ export class GcsStorageAdapter {
   async readCheckpoint() {
     const name = "ethereum/checkpoint.json";
     const file = this.stateBucket.file(name);
-    let metadata;
-    try {
-      [metadata] = await file.getMetadata();
-    } catch (error) {
-      if (Number(error?.code) === 404) return null;
-      throw error;
+    // The bucket is unversioned, so a write between these calls removes the pinned generation.
+    for (let attempt = 1; ; attempt += 1) {
+      let metadata;
+      try {
+        [metadata] = await file.getMetadata();
+      } catch (error) {
+        if (Number(error?.code) === 404) return null;
+        throw error;
+      }
+      const generation = String(metadata.generation);
+      try {
+        const [contents] = await this.stateBucket.file(name, { generation }).download();
+        return { value: JSON.parse(contents.toString("utf8")), generation };
+      } catch (error) {
+        if (Number(error?.code) !== 404 || attempt === 3) throw error;
+      }
     }
-    const generation = String(metadata.generation);
-    const [contents] = await this.stateBucket.file(name, { generation }).download();
-    return { value: JSON.parse(contents.toString("utf8")), generation };
   }
 
   async writeCheckpoint(checkpoint, expectedGeneration) {

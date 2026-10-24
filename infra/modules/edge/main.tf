@@ -1,5 +1,27 @@
 locals {
   cache_fill_agent = "serviceAccount:service-${var.project_number}@https-lb.iam.gserviceaccount.com"
+
+  # Must sit before the rate-limit rule: its conform action allows and ends evaluation.
+  # nodejs has no v422 rule set.
+  api_waf_rules = {
+    sqli              = { priority = 900, version = "v422" }
+    xss               = { priority = 910, version = "v422" }
+    lfi               = { priority = 920, version = "v422" }
+    rfi               = { priority = 930, version = "v422" }
+    rce               = { priority = 940, version = "v422" }
+    nodejs            = { priority = 950, version = "v33" }
+    scannerdetection  = { priority = 960, version = "v422" }
+    protocolattack    = { priority = 970, version = "v422" }
+    methodenforcement = { priority = 980, version = "v422" }
+  }
+
+  security_response_headers = [
+    "Strict-Transport-Security: max-age=${var.hsts_max_age_seconds}",
+    "X-Content-Type-Options: nosniff",
+    "X-Frame-Options: DENY",
+    "Referrer-Policy: strict-origin-when-cross-origin",
+    "Permissions-Policy: camera=(), microphone=(), geolocation=()",
+  ]
 }
 
 resource "google_compute_global_address" "lb" {
@@ -60,6 +82,25 @@ resource "google_compute_security_policy" "api" {
   name    = var.api_security_policy_name
   type    = "CLOUD_ARMOR"
 
+  advanced_options_config {
+    log_level = "VERBOSE"
+  }
+
+  dynamic "rule" {
+    for_each = local.api_waf_rules
+    content {
+      action      = "deny(403)"
+      priority    = rule.value.priority
+      preview     = !contains(var.api_waf_enforced_rules, rule.key)
+      description = "OWASP ${rule.key}-${rule.value.version}-stable, sensitivity 1"
+      match {
+        expr {
+          expression = "evaluatePreconfiguredWaf('${rule.key}-${rule.value.version}-stable', {'sensitivity': 1})"
+        }
+      }
+    }
+  }
+
   rule {
     action      = "rate_based_ban"
     priority    = 1000
@@ -97,11 +138,12 @@ resource "google_compute_security_policy" "api" {
 
 
 resource "google_compute_backend_bucket" "html" {
-  project              = var.project_id
-  name                 = "${var.name_prefix}-html"
-  bucket_name          = var.frontend_bucket_name
-  enable_cdn           = true
-  edge_security_policy = google_compute_security_policy.frontend_edge.id
+  project                 = var.project_id
+  name                    = "${var.name_prefix}-html"
+  bucket_name             = var.frontend_bucket_name
+  enable_cdn              = true
+  edge_security_policy    = google_compute_security_policy.frontend_edge.id
+  custom_response_headers = local.security_response_headers
 
   cdn_policy {
     cache_mode       = "FORCE_CACHE_ALL"
@@ -112,11 +154,12 @@ resource "google_compute_backend_bucket" "html" {
 }
 
 resource "google_compute_backend_bucket" "assets" {
-  project              = var.project_id
-  name                 = "${var.name_prefix}-assets"
-  bucket_name          = var.frontend_bucket_name
-  enable_cdn           = true
-  edge_security_policy = google_compute_security_policy.frontend_edge.id
+  project                 = var.project_id
+  name                    = "${var.name_prefix}-assets"
+  bucket_name             = var.frontend_bucket_name
+  enable_cdn              = true
+  edge_security_policy    = google_compute_security_policy.frontend_edge.id
+  custom_response_headers = local.security_response_headers
 
   cdn_policy {
     cache_mode       = "FORCE_CACHE_ALL"
@@ -148,11 +191,12 @@ resource "google_compute_region_network_endpoint_group" "api" {
 }
 
 resource "google_compute_backend_service" "api" {
-  project               = var.project_id
-  name                  = "${var.name_prefix}-api-backend"
-  protocol              = "HTTPS"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  security_policy       = google_compute_security_policy.api.id
+  project                 = var.project_id
+  name                    = "${var.name_prefix}-api-backend"
+  protocol                = "HTTPS"
+  load_balancing_scheme   = "EXTERNAL_MANAGED"
+  security_policy         = google_compute_security_policy.api.id
+  custom_response_headers = local.security_response_headers
 
   backend {
     group = google_compute_region_network_endpoint_group.api.id
