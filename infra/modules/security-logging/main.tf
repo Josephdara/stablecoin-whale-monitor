@@ -33,6 +33,12 @@ locals {
     "resource.labels.backend_service_name=\"${var.api_backend_service_name}\"",
     "jsonPayload.enforcedSecurityPolicy.outcome=\"DENY\"",
   ])
+
+  armor_preview_denied = join(" AND ", [
+    "resource.type=\"http_load_balancer\"",
+    "resource.labels.backend_service_name=\"${var.api_backend_service_name}\"",
+    "jsonPayload.previewSecurityPolicy.outcome=\"DENY\"",
+  ])
 }
 
 resource "google_project_iam_audit_config" "secret_manager" {
@@ -67,7 +73,7 @@ resource "google_logging_project_sink" "security" {
   project     = var.project_id
   name        = "${var.name_prefix}-security"
   destination = "logging.googleapis.com/${google_logging_project_bucket_config.security.id}"
-  filter      = "logName:\"cloudaudit.googleapis.com\" OR (${local.armor_denied})"
+  filter      = "logName:\"cloudaudit.googleapis.com\" OR (${local.armor_denied}) OR (${local.armor_preview_denied})"
 }
 
 # Data Access entries are stored once, in the security bucket.

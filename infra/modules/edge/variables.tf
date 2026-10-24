@@ -74,6 +74,28 @@ variable "api_log_sample_rate" {
   type        = number
 }
 
+variable "api_waf_enforced_rules" {
+  description = "WAF rule sets that block on the API. All others run in preview and only log matches."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for name in var.api_waf_enforced_rules : contains(
+        ["sqli", "xss", "lfi", "rfi", "rce", "nodejs", "scannerdetection", "protocolattack", "methodenforcement"],
+        name,
+      )
+    ])
+    error_message = "Each entry must be one of: sqli, xss, lfi, rfi, rce, nodejs, scannerdetection, protocolattack, methodenforcement."
+  }
+}
+
+variable "hsts_max_age_seconds" {
+  description = "Strict-Transport-Security max-age on every response. Raise once HTTPS has been stable."
+  type        = number
+  default     = 86400
+}
+
 variable "services_paused" {
   description = "Stops routing /api to the API while it is paused. Those paths fall through to the frontend bucket and return 404."
   type        = bool

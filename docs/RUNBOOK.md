@@ -962,7 +962,8 @@ The `security-logging` module configures:
   including each Cloud Armor decision.
 - The log bucket `<name_prefix>-security` in the deployment region, with
   `security_log_retention_days` (default 365) and no retention lock. A sink
-  routes every audit log and each Cloud Armor denial on the API backend into it.
+  routes every audit log, and each Cloud Armor denial or preview-rule match on
+  the API backend, into it.
   An exclusion keeps Data Access logs out of `_Default`, so each entry is stored
   once.
 - The `security-readers` log view, readable by `security_log_readers`.
@@ -982,6 +983,7 @@ gcloud logging read '<filter>' --project="$PROJECT_ID" \
 | IAM and audit-config changes | `protoPayload.methodName=~"(?i)setiampolicy$" OR protoPayload.methodName="storage.setIamPermissions"` |
 | Secret reads | `protoPayload.methodName:"AccessSecretVersion"` |
 | Cloud Armor denials | `jsonPayload.enforcedSecurityPolicy.outcome="DENY"` |
+| WAF preview matches | `jsonPayload.previewSecurityPolicy.outcome="DENY"` |
 
 Alerts go to the monitoring email channel:
 
@@ -1015,6 +1017,55 @@ The accounts in `storage_read_exempt_emails` must not appear: the API, the
 indexer, and the cache-fill agent
 (`service-<project-number>@https-lb.iam.gserviceaccount.com`). Ingested bytes per
 bucket are under **Logging → Log storage** in the console.
+
+### Cloud Armor WAF and response headers
+
+The API security policy runs OWASP preconfigured rules at sensitivity 1, at
+priorities 900-980: `sqli`, `xss`, `lfi`, `rfi`, `rce`, `scannerdetection`,
+`protocolattack`, and `methodenforcement` on `v422-stable`, and `nodejs` on
+`v33-stable`, its latest version. They sit before the per-IP rate limit at
+1000, because that rule allows conforming requests and ends evaluation; any
+rule added later must also sit below 1000. A rule in preview logs what it would
+deny without blocking. The policy logs at `VERBOSE`, so each match records the
+request field and value that triggered it.
+
+Every rule runs in preview unless its name is in `api_waf_enforced_rules` in
+the `edge` module call. To enforce a rule, add its name, for example
+`api_waf_enforced_rules = ["sqli", "xss"]`, and apply as in
+[Infrastructure change](#infrastructure-change). Remove the name to return it
+to preview.
+
+Review preview matches by rule and matched field:
+
+```bash
+gcloud logging read 'jsonPayload.previewSecurityPolicy.outcome="DENY"' \
+  --project="$PROJECT_ID" --bucket="${NAME_PREFIX}-security" --location="$REGION" \
+  --view=security-readers --freshness=7d --limit=200 \
+  --format="table(timestamp,jsonPayload.previewSecurityPolicy.priority,jsonPayload.previewSecurityPolicy.preconfiguredExprIds,httpRequest.requestUrl)"
+```
+
+A match on normal monitor or status-page traffic is a false positive. Exclude
+the signature named in `preconfiguredExprIds` from that rule before enforcing.
+
+The load balancer adds these headers to every frontend and API response:
+
+| Header | Value |
+| --- | --- |
+| `Strict-Transport-Security` | `max-age=` `hsts_max_age_seconds` (default 86400) |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
+
+To raise the HSTS max-age, set `hsts_max_age_seconds` in the `edge` module call
+and apply as in [Infrastructure change](#infrastructure-change). Browsers keep
+the value for that long, so HTTPS must stay available on the domain.
+
+The API also sets `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`,
+`Cross-Origin-Resource-Policy: same-origin`, and `Cache-Control: no-store`. It
+answers other methods on its routes with `405` and an `Allow` header, and
+unknown paths with a JSON `404`. `/api/health` reports failures as fixed
+messages; the details are in its `health_degraded` log entries.
 
 ### Secret rotation
 

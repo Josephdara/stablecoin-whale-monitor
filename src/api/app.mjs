@@ -168,6 +168,8 @@ export function createApiApp({ config, storage, index, logger = console.error })
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Referrer-Policy", "no-referrer");
     response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+    response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
     if (config.allowedOrigin) response.setHeader("Access-Control-Allow-Origin", config.allowedOrigin);
     next();
   });
@@ -236,6 +238,7 @@ export function createApiApp({ config, storage, index, logger = console.error })
           checkpointError,
         });
       }
+      // Raw messages can name buckets and service accounts; they stay in the log.
       response.status(indexError ? 503 : 200).json({
         status: degraded ? "degraded" : "ok",
         chainId: config.chainId,
@@ -249,19 +252,32 @@ export function createApiApp({ config, storage, index, logger = console.error })
         pollIntervalSeconds: config.pollIntervalMs ? config.pollIntervalMs / 1000 : null,
         indexedEvents: index.events.length,
         indexRefreshedAt: index.refreshedAt,
-        indexError,
-        lastRefreshError,
-        checkpointError,
+        indexError: indexError ? "Event index unavailable" : null,
+        lastRefreshError: lastRefreshError ? "Event index refresh failed" : null,
+        checkpointError: checkpointError ? "Checkpoint read failed" : null,
       });
     } catch (error) {
       next(error);
     }
   });
 
+  for (const path of ["/api/transfers", "/api/transfers/:txHash", "/api/health"]) {
+    app.all(path, (_request, response) => {
+      response.setHeader("Allow", "GET, HEAD");
+      response.status(405).json({ error: "Method not allowed" });
+    });
+  }
+
+  app.use((_request, response) => {
+    response.status(404).json({ error: "Not found" });
+  });
+
   app.use((error, _request, response, _next) => {
-    const status = Number(error?.status) || 500;
-    const masked = status >= 500 && !error?.expose;
-    response.status(status).json({ error: masked ? "Internal server error" : error.message });
+    const status = error instanceof ApiError ? error.status : Number(error?.status) || 500;
+    const message = error instanceof ApiError
+      ? error.message
+      : status >= 500 ? "Internal server error" : "Invalid request";
+    response.status(status).json({ error: message });
   });
 
   return app;
@@ -327,7 +343,7 @@ function parseToken(value) {
 
 function parseMinimum(value) {
   if (value === undefined || value === "") return "";
-  if (typeof value !== "string" || !/^[0-9]+(?:\.[0-9]{1,6})?$/.test(value)) throw httpError(400, "Invalid minimumAmount filter");
+  if (typeof value !== "string" || value.length > 30 || !/^[0-9]+(?:\.[0-9]{1,6})?$/.test(value)) throw httpError(400, "Invalid minimumAmount filter");
   return value;
 }
 
@@ -363,16 +379,15 @@ function isAddress(value) {
   return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
 }
 
-function httpError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
+class ApiError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
 }
 
-function serviceUnavailable(message) {
-  const error = httpError(503, message);
-  error.expose = true;
-  return error;
+function httpError(status, message) {
+  return new ApiError(status, message);
 }
 
 function logSafely(logger, payload) {
@@ -392,6 +407,6 @@ async function requireFreshIndex(index, config) {
     // genuinely unusable: never loaded, or older than maxStaleMs.
   }
   if (index.refreshedAt === null || index.isStale(config.maxStaleMs ?? config.refreshMs)) {
-    throw serviceUnavailable("Event index could not be refreshed");
+    throw httpError(503, "Event index could not be refreshed");
   }
 }
