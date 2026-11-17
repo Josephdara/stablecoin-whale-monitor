@@ -235,7 +235,7 @@ resource "google_cloud_run_v2_service" "api" {
           API_REFRESH_DEADLINE_MS = tostring(var.api_refresh_deadline_ms)
           API_MAX_STALE_MS        = tostring(var.api_max_stale_ms)
           API_MAX_PAGE_SIZE       = tostring(var.api_max_page_size)
-          API_ALLOWED_ORIGIN      = var.api_allowed_origin
+          API_ALLOWED_ORIGIN      = join(",", var.api_allowed_origins)
           CHAIN_ID                = tostring(var.chain_id)
           RETENTION_DAYS          = tostring(var.event_retention_days)
           # Indexer settings the API reports from /api/health.

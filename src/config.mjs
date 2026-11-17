@@ -76,7 +76,7 @@ export function loadApiConfig(env = process.env) {
     refreshDeadlineMs: optionalInteger(env, "API_REFRESH_DEADLINE_MS", 5_000, { min: 100, max: 60_000 }),
     maxStaleMs: optionalInteger(env, "API_MAX_STALE_MS", 600_000, { min: 1_000, max: 86_400_000 }),
     maxPageSize: integer(env, "API_MAX_PAGE_SIZE", { min: 1, max: 200 }),
-    allowedOrigin: env.API_ALLOWED_ORIGIN?.trim() || "",
+    allowedOrigins: origins(env, "API_ALLOWED_ORIGIN"),
     chainId: integer(env, "CHAIN_ID", { min: 1, max: 2 ** 31 - 1 }),
     retentionDays: integer(env, "RETENTION_DAYS", { min: 1, max: 365 }),
     // Indexer settings reported by /api/health. Optional: reported as null when unset.
@@ -163,6 +163,20 @@ function topic(env, key) {
   const value = required(env, key).toLowerCase();
   if (!/^0x[0-9a-f]{64}$/.test(value)) throw new Error(`${key} must be a 32-byte topic`);
   return value;
+}
+
+function origins(env, key) {
+  const values = (env[key] ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+  for (const value of values) {
+    let parsed;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new Error(`${key} has an invalid origin: ${value}`);
+    }
+    if (parsed.origin !== value) throw new Error(`${key} entries must be bare origins: ${value}`);
+  }
+  return values;
 }
 
 function isLoopback(hostname) {

@@ -304,12 +304,15 @@ variable "api_max_page_size" {
   default     = 50
 }
 
-variable "api_allowed_origin" {
-  description = "HTTPS browser origin accepted by the API."
-  type        = string
-  default     = "https://swm.josephdara.com"
+variable "api_allowed_origins" {
+  description = "Browser origins allowed to read the API cross-origin. Exact matches only."
+  type        = list(string)
+  default     = ["https://swm.josephdara.com", "https://josephdara.com"]
 
-
+  validation {
+    condition     = alltrue([for origin in var.api_allowed_origins : can(regex("^https://[a-z0-9.-]+(:[0-9]+)?$", origin))])
+    error_message = "api_allowed_origins entries must be bare https origins with no path or trailing slash."
+  }
 }
 
 variable "api_min_instances" {

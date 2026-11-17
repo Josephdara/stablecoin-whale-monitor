@@ -118,7 +118,7 @@ module "cloud_run" {
   api_refresh_deadline_ms   = var.api_refresh_deadline_ms
   api_max_stale_ms          = var.api_max_stale_ms
   api_max_page_size         = var.api_max_page_size
-  api_allowed_origin        = var.api_allowed_origin
+  api_allowed_origins       = var.api_allowed_origins
   event_retention_days      = var.event_retention_days
   api_cpu                   = var.api_cpu
   api_memory                = var.api_memory

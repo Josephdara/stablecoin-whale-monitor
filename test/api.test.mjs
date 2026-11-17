@@ -578,6 +578,41 @@ test("checkpoint read failures return degraded health without invalidating the i
   assert.match(logs[0].checkpointError, /unavailable/);
 });
 
+test("CORS echoes only allowlisted origins and always varies on Origin", async () => {
+  const index = new EventIndex({ listEvents: async () => [] }, 1, 7);
+  const config = apiConfig({ allowedOrigins: ["https://swm.example.com", "https://example.com"] });
+
+  await withApi({ config, storage: {}, index }, async (request) => {
+    for (const origin of ["https://example.com", "https://swm.example.com"]) {
+      const response = await request("/api/health", { headers: { Origin: origin } });
+      assert.equal(response.headers.get("access-control-allow-origin"), origin);
+      assert.equal(response.headers.get("vary"), "Origin");
+    }
+
+    const other = await request("/api/health", { headers: { Origin: "https://evil.example.net" } });
+    assert.equal(other.headers.get("access-control-allow-origin"), null);
+    assert.equal(other.headers.get("vary"), "Origin");
+  });
+});
+
+test("api configuration parses API_ALLOWED_ORIGIN as a list of bare origins", () => {
+  const base = {
+    STORAGE_BACKEND: "local",
+    API_PORT: "3001",
+    API_REFRESH_MS: "30000",
+    API_MAX_PAGE_SIZE: "50",
+    CHAIN_ID: "1",
+    RETENTION_DAYS: "7",
+  };
+  assert.deepEqual(loadApiConfig({ ...base }).allowedOrigins, []);
+  assert.deepEqual(
+    loadApiConfig({ ...base, API_ALLOWED_ORIGIN: "https://swm.example.com, https://example.com" }).allowedOrigins,
+    ["https://swm.example.com", "https://example.com"],
+  );
+  assert.throws(() => loadApiConfig({ ...base, API_ALLOWED_ORIGIN: "https://example.com/" }), /API_ALLOWED_ORIGIN/);
+  assert.throws(() => loadApiConfig({ ...base, API_ALLOWED_ORIGIN: "example.com" }), /API_ALLOWED_ORIGIN/);
+});
+
 test("api configuration validates refresh deadlines, maximum staleness and reported indexer settings", () => {
   const base = {
     STORAGE_BACKEND: "local",
@@ -629,7 +664,7 @@ function apiConfig(overrides = {}) {
     refreshMs: 30_000,
     refreshDeadlineMs: 5_000,
     maxStaleMs: 600_000,
-    allowedOrigin: "",
+    allowedOrigins: [],
     ...overrides,
   };
 }

@@ -170,7 +170,11 @@ export function createApiApp({ config, storage, index, logger = console.error })
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
     response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
-    if (config.allowedOrigin) response.setHeader("Access-Control-Allow-Origin", config.allowedOrigin);
+    response.setHeader("Vary", "Origin");
+    const origin = request.get("Origin");
+    if (origin && config.allowedOrigins?.includes(origin)) {
+      response.setHeader("Access-Control-Allow-Origin", origin);
+    }
     next();
   });
 
