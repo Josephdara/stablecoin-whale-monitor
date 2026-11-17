@@ -238,7 +238,7 @@ Edit `infra/environments/test/terraform.tfvars` and set at least:
 | `events_bucket_name` | `EVENTS_BUCKET` |
 | `state_bucket_name` | `STATE_BUCKET` (not the Terraform-state bucket) |
 | `domain_name` | `DOMAIN_NAME` |
-| `api_allowed_origin` | `https://<DOMAIN_NAME>` |
+| `api_allowed_origins` | `["https://<DOMAIN_NAME>"]`, plus any other site that reads the API from a browser |
 | `alert_email_to` | recipient of whale-alert emails |
 | `alert_email_from` | Gmail account that owns the app password |
 | `start_block` | set immediately before the first Worker Pool creation |

@@ -105,9 +105,9 @@ variable "api_max_page_size" {
   type        = number
 }
 
-variable "api_allowed_origin" {
-  description = "HTTPS browser origin accepted by the API."
-  type        = string
+variable "api_allowed_origins" {
+  description = "Browser origins allowed to read the API cross-origin."
+  type        = list(string)
 }
 
 variable "event_retention_days" {
