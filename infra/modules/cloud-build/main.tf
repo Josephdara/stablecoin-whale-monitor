@@ -135,7 +135,7 @@ resource "google_project_iam_custom_role" "run_operations_reader" {
   project     = var.project_id
   role_id     = "swmRunOperationsReader"
   title       = "SWM Cloud Run operations reader"
-  description = "Read Cloud Run long-running operations. Required to poll a worker pool update to completion."
+  description = "Read Cloud Run long-running operations. Required to poll Cloud Run updates to completion."
   permissions = ["run.operations.get"]
 }
 
@@ -145,12 +145,10 @@ resource "google_project_iam_member" "cd_run_operations" {
   member  = "serviceAccount:${google_service_account.cd.email}"
 }
 
-resource "google_cloud_run_v2_worker_pool_iam_member" "cd_indexer" {
-  provider = google-beta
-
+resource "google_cloud_run_v2_job_iam_member" "cd_indexer" {
   project  = var.project_id
   location = var.region
-  name     = var.indexer_worker_pool_name
+  name     = var.indexer_job_name
   role     = "roles/run.developer"
   member   = "serviceAccount:${google_service_account.cd.email}"
 }
@@ -242,8 +240,8 @@ resource "google_cloudbuild_trigger" "cd" {
     _FRONTEND_BUCKET  = var.frontend_bucket_name
     _API_SERVICE      = var.api_service_name
     # _ALERTER_SERVICE  = var.alerter_service_name
-    _INDEXER_POOL = var.indexer_worker_pool_name
-    _PUBLIC_URL   = var.public_url
+    _INDEXER_JOB = var.indexer_job_name
+    _PUBLIC_URL  = var.public_url
     # _ALERTER_URL      = var.alerter_url
     _EVENTS_BUCKET   = var.events_bucket_name
     _STATE_BUCKET    = var.state_bucket_name

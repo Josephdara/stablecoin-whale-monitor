@@ -213,23 +213,23 @@ resource "google_monitoring_alert_policy" "api_latency" {
 # }
 
 
-resource "google_monitoring_alert_policy" "indexer_instance" {
+resource "google_monitoring_alert_policy" "indexer_job_failed" {
   project      = var.project_id
-  display_name = "SWM indexer worker pool down (${var.environment})"
+  display_name = "SWM indexer job failed (${var.environment})"
   combiner     = "OR"
   enabled      = !var.services_paused
 
   conditions {
-    display_name = "Active instance count is 0"
+    display_name = "Indexer execution failed after retries"
     condition_threshold {
-      filter          = "metric.type=\"run.googleapis.com/container/instance_count\" AND resource.type=\"cloud_run_worker_pool\" AND resource.label.worker_pool_name=\"${var.indexer_worker_pool_name}\" AND metric.label.state=\"active\""
-      comparison      = "COMPARISON_LT"
-      threshold_value = 1
-      duration        = "300s"
+      filter          = "metric.type=\"run.googleapis.com/job/completed_execution_count\" AND resource.type=\"cloud_run_job\" AND resource.label.job_name=\"${var.indexer_job_name}\" AND metric.label.result=\"failed\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
 
       aggregations {
         alignment_period   = "300s"
-        per_series_aligner = "ALIGN_MIN"
+        per_series_aligner = "ALIGN_SUM"
       }
     }
   }
@@ -241,8 +241,8 @@ resource "google_logging_metric" "indexer_cycles" {
   project = var.project_id
   name    = "swm-indexer-cycle-complete-${var.environment}"
   filter = join(" AND ", [
-    "resource.type=\"cloud_run_worker_pool\"",
-    "resource.labels.worker_pool_name=\"${var.indexer_worker_pool_name}\"",
+    "resource.type=\"cloud_run_job\"",
+    "resource.labels.job_name=\"${var.indexer_job_name}\"",
     "(jsonPayload.message=\"Indexer range committed\" OR jsonPayload.message=\"Indexer cycle complete\")",
   ])
 
@@ -254,7 +254,7 @@ resource "google_logging_metric" "indexer_cycles" {
 
 resource "google_monitoring_alert_policy" "indexer_stalled" {
   project      = var.project_id
-  display_name = "SWM indexer loop stalled (${var.environment})"
+  display_name = "SWM indexer stalled (${var.environment})"
   combiner     = "OR"
   enabled      = !var.services_paused
 
@@ -263,13 +263,14 @@ resource "google_monitoring_alert_policy" "indexer_stalled" {
     condition_threshold {
       filter = join(" AND ", [
         "metric.type=\"logging.googleapis.com/user/${google_logging_metric.indexer_cycles.name}\"",
-        "resource.type=\"cloud_run_worker_pool\"",
+        "resource.type=\"cloud_run_job\"",
       ])
       comparison      = "COMPARISON_LT"
       threshold_value = 1
 
 
-      duration = var.indexer_stall_duration_seconds
+      # Two missed runs plus margin.
+      duration = "${(var.indexer_interval_minutes * 2 + 10) * 60}s"
 
       evaluation_missing_data = "EVALUATION_MISSING_DATA_ACTIVE"
 
@@ -281,7 +282,7 @@ resource "google_monitoring_alert_policy" "indexer_stalled" {
         group_by_fields = [
           "resource.label.project_id",
           "resource.label.location",
-          "resource.label.worker_pool_name",
+          "resource.label.job_name",
         ]
       }
     }

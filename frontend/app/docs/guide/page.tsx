@@ -98,7 +98,7 @@ export default function GuidePage() {
           <tr><td>Log index</td><td>The position of this event inside its block. Together with the transaction hash it identifies the transfer.</td></tr>
           <tr><td>Transaction</td><td>The transaction hash, with a link to Etherscan.</td></tr>
           <tr><td>Token contract</td><td>The USDC or USDT contract that emitted the event.</td></tr>
-          <tr><td>Detected at</td><td>When the indexer recorded the transfer. It is later than the block time by the confirmation buffer and polling delay.</td></tr>
+          <tr><td>Detected at</td><td>When the indexer recorded the transfer. It is later than the block time by the confirmation buffer and the wait for the next indexer run.</td></tr>
           <tr><td>Threshold</td><td>The indexing threshold in force when the transfer was recorded.</td></tr>
         </tbody>
       </table>
@@ -120,12 +120,12 @@ export default function GuidePage() {
       <p>A transfer is not shown the moment it is mined. It passes through four steps:</p>
       <ol className="steps">
         <li className="card"><span className="small strong">Confirmation</span><br /><span className="small muted">{COVERAGE.confirmationBlocks} blocks, about {CONFIRMATION_SECONDS} s</span></li>
-        <li className="card"><span className="small strong">Indexer poll</span><br /><span className="small muted">Up to {COVERAGE.pollIntervalSeconds} s</span></li>
+        <li className="card"><span className="small strong">Indexer run</span><br /><span className="small muted">Up to {COVERAGE.pollIntervalSeconds / 60} min</span></li>
         <li className="card"><span className="small strong">API refresh</span><br /><span className="small muted">Up to {COVERAGE.apiRefreshSeconds} s</span></li>
         <li className="card"><span className="small strong">Monitor refresh</span><br /><span className="small muted">Up to {COVERAGE.monitorRefreshSeconds} s, or press Refresh now</span></li>
       </ol>
       <p>
-        The configured confirmation and refresh intervals suggest a delay of roughly 1 to 3 minutes. The status strip
+        The indexer runs every {COVERAGE.pollIntervalSeconds / 60} minutes, so a transfer can take up to about that long to appear. The status strip
         at the top of the monitor shows three signals to help you check freshness:
       </p>
       <ul>
@@ -157,7 +157,7 @@ export default function GuidePage() {
         <dt>A transfer is on Etherscan but not in the monitor. Why?</dt>
         <dd>
           It may be under {T} tokens, a different token, older than {DAYS} days, or too recent to have passed the
-          confirmation buffer and refresh cycle. Check the status page if you expected it within the last few minutes.
+          confirmation buffer and the next indexer run. Check the status page if you expected it more than {COVERAGE.pollIntervalSeconds / 60} minutes ago.
         </dd>
         <dt>Can I see the value in US dollars?</dt>
         <dd>No. Amounts are token units as recorded on chain. The monitor does not price tokens.</dd>

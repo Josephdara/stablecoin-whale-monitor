@@ -51,6 +51,7 @@ resource "google_project_iam_member" "planner" {
   for_each = {
     compute     = "roles/compute.viewer"
     run         = "roles/run.viewer"
+    scheduler   = "roles/cloudscheduler.viewer"
     registry    = "roles/artifactregistry.reader"
     cloud_build = "roles/cloudbuild.builds.viewer"
     plan_reader = google_project_iam_custom_role.plan_reader.id

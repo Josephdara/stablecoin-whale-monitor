@@ -7,7 +7,8 @@ regional_locations := {"us-east4"}
 
 regional_types := {
 	"google_cloud_run_v2_service",
-	"google_cloud_run_v2_worker_pool",
+	"google_cloud_run_v2_job",
+	"google_cloud_scheduler_job",
 	"google_artifact_registry_repository",
 	"google_logging_project_bucket_config",
 }
@@ -35,3 +36,5 @@ deny contains msg if {
 approved_bucket_location(after) if upper(after.location) in bucket_locations
 
 approved_region(after) if after.location in regional_locations
+
+approved_region(after) if after.region in regional_locations

@@ -56,7 +56,7 @@ output "api_service_account_email" {
 }
 
 output "indexer_service_account_email" {
-  description = "Runtime identity for the indexer Worker Pool."
+  description = "Runtime identity for the indexer Cloud Run Job."
   value       = module.iam.indexer_service_account_email
 }
 

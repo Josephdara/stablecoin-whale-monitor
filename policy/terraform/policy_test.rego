@@ -21,6 +21,11 @@ api := rc("module.cloud_run.google_cloud_run_v2_service.api", "google_cloud_run_
 	"template": [{"service_account": "api@p.iam.gserviceaccount.com", "containers": [{"image": digest}]}],
 })
 
+indexer := rc("module.cloud_run.google_cloud_run_v2_job.indexer", "google_cloud_run_v2_job", ["update"], {
+	"location": "us-east4",
+	"template": [{"template": [{"service_account": "indexer@p.iam.gserviceaccount.com", "containers": [{"image": digest}]}]}],
+})
+
 api_public := rc(
 	"module.cloud_run.google_cloud_run_v2_service_iam_member.api_public",
 	"google_cloud_run_v2_service_iam_member", ["no-op"],
@@ -35,7 +40,7 @@ log_bucket := rc("module.security_logging.google_logging_project_bucket_config.s
 
 plan(changes) := {"format_version": "1.2", "resource_changes": changes}
 
-compliant := plan([bucket, api, api_public, viewer, backend, log_bucket])
+compliant := plan([bucket, api, indexer, api_public, viewer, backend, log_bucket])
 
 denials contains msg if {
 	some pkg in ["input_format", "storage", "public_access", "iam", "cloud_run", "location", "lifecycle", "logging"]
@@ -68,6 +73,11 @@ test_project_editor_rejected if {
 
 test_public_ingress_rejected if {
 	changed := json.patch(api, [{"op": "replace", "path": "/change/after/ingress", "value": "INGRESS_TRAFFIC_ALL"}])
+	count(denials) == 1 with input as plan([changed])
+}
+
+test_job_default_identity_rejected if {
+	changed := json.patch(indexer, [{"op": "replace", "path": "/change/after/template/0/template/0/service_account", "value": "1-compute@developer.gserviceaccount.com"}])
 	count(denials) == 1 with input as plan([changed])
 }
 

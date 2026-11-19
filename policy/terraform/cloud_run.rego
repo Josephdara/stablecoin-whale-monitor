@@ -5,8 +5,22 @@ private_ingress := {"INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER", "INGRESS_TRAFFIC_I
 workloads contains rc if {
 	some rc in input.resource_changes
 	rc.mode == "managed"
-	rc.type in {"google_cloud_run_v2_service", "google_cloud_run_v2_worker_pool"}
+	rc.type in {"google_cloud_run_v2_service", "google_cloud_run_v2_job"}
 	rc.change.after != null
+}
+
+# Jobs nest the container template one level deeper than services.
+pod_templates contains [rc.address, i, template] if {
+	some rc in workloads
+	rc.type == "google_cloud_run_v2_service"
+	some i, template in rc.change.after.template
+}
+
+pod_templates contains [rc.address, i, template] if {
+	some rc in workloads
+	rc.type == "google_cloud_run_v2_job"
+	some i, execution in rc.change.after.template
+	some template in execution.template
 }
 
 deny contains msg if {
@@ -23,21 +37,19 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	some rc in workloads
-	some i, template in rc.change.after.template
+	some [address, i, template] in pod_templates
 	not dedicated_identity(template)
-	not identity_created_in_plan(rc, i)
-	msg := sprintf("cloud_run: %s must run as a dedicated service account", [rc.address])
+	not identity_created_in_plan(address, i)
+	msg := sprintf("cloud_run: %s must run as a dedicated service account", [address])
 }
 
 # Only a known image is checked; CD owns the deployed image after creation.
 deny contains msg if {
-	some rc in workloads
-	some template in rc.change.after.template
+	some [address, _, template] in pod_templates
 	some container in template.containers
 	is_string(container.image)
 	not contains(container.image, "@sha256:")
-	msg := sprintf("cloud_run: %s image must be digest-qualified", [rc.address])
+	msg := sprintf("cloud_run: %s image must be digest-qualified", [address])
 }
 
 private(after) if after.ingress in private_ingress
@@ -49,8 +61,17 @@ dedicated_identity(template) if {
 	not endswith(template.service_account, "-compute@developer.gserviceaccount.com")
 }
 
-identity_created_in_plan(rc, i) if {
-	rc.change.after_unknown.template[i].service_account == true
+identity_unknown(rc, i) if rc.change.after_unknown.template[i].service_account == true
+
+identity_unknown(rc, i) if {
+	some unknown in rc.change.after_unknown.template[i].template
+	unknown.service_account == true
+}
+
+identity_created_in_plan(address, i) if {
+	some rc in workloads
+	rc.address == address
+	identity_unknown(rc, i)
 	some sa in input.resource_changes
 	sa.type == "google_service_account"
 	"create" in sa.change.actions

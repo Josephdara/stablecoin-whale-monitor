@@ -10,8 +10,15 @@ resource "google_service_account" "api" {
 resource "google_service_account" "indexer" {
   project      = var.project_id
   account_id   = var.indexer_service_account_id
-  display_name = "SWM indexer worker pool runtime"
+  display_name = "SWM indexer job runtime"
   description  = "Create-only on events, read/write on application state, reads the RPC secret."
+}
+
+resource "google_service_account" "indexer_scheduler" {
+  project      = var.project_id
+  account_id   = var.indexer_scheduler_service_account_id
+  display_name = "SWM indexer scheduler"
+  description  = "Used by Cloud Scheduler to start the indexer job. Invoker on that job only."
 }
 
 # Alerting disabled; keep the dedicated identities for easy restoration.

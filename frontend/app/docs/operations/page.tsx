@@ -72,7 +72,7 @@ export default function OperationsPage() {
         <tbody>
           <tr><td><code>MIN_AMOUNT</code></td><td>{COVERAGE.indexThreshold}</td><td>Indexing threshold in tokens</td></tr>
           <tr><td><code>CONFIRMATION_BUFFER</code></td><td>{COVERAGE.confirmationBlocks}</td><td>Blocks behind the tip before a block is read</td></tr>
-          <tr><td><code>POLL_INTERVAL_MS</code></td><td>{COVERAGE.pollIntervalSeconds * 1000}</td><td>Indexer poll interval</td></tr>
+          <tr><td><code>POLL_INTERVAL_MS</code></td><td>{COVERAGE.pollIntervalSeconds * 1000}</td><td>Interval between scheduled indexer runs, set by <code>indexer_interval_minutes</code> in Terraform</td></tr>
           <tr><td><code>BLOCK_BATCH_SIZE</code></td><td>5</td><td>Blocks per processed range</td></tr>
           <tr><td><code>RETENTION_DAYS</code></td><td>{COVERAGE.retentionDays}</td><td>History the API serves</td></tr>
           <tr><td><code>API_REFRESH_MS</code></td><td>{COVERAGE.apiRefreshSeconds * 1000}</td><td>How often the API reloads its index</td></tr>
@@ -123,14 +123,14 @@ export default function OperationsPage() {
       <H2 id="verify">Verification and monitoring</H2>
       <p>
         After each deploy, CD runs the smoke test in <code>infra/scripts/smoke-test.sh</code>. It checks the site,
-        caching headers, TLS, the API, checkpoint advancement and storage policy. You can check health by hand at any
+        caching headers, TLS, the API, checkpoint age and storage policy. You can check health by hand at any
         time:
       </p>
       <CodeBlock title="Shell" code={HEALTH_CHECK} />
       <p>
-        Look for <code>&quot;status&quot;:&quot;ok&quot;</code> and a small <code>checkpointAgeSeconds</code>. Cloud
-        Monitoring alerts by email on failing uptime checks, 5xx responses, persistently degraded health, high p99
-        latency, a stopped indexer and a stalled indexer loop.
+        Look for <code>&quot;status&quot;:&quot;ok&quot;</code> and a <code>checkpointAgeSeconds</code> under one
+        indexer interval ({COVERAGE.pollIntervalSeconds / 60} minutes). Cloud Monitoring alerts by email on failing uptime checks, 5xx responses,
+        persistently degraded health, high p99 latency, a failed indexer run and a stalled indexer.
       </p>
 
       <H2 id="maintenance">Maintenance</H2>
@@ -144,8 +144,8 @@ export default function OperationsPage() {
         </tbody>
       </table>
       <p>
-        To pause, set all three to <code>true</code>, apply Terraform, then cut a release. Terraform scales the indexer
-        to zero, stops routing <code>/api</code> and disables the API and indexer alert policies. To resume, set all
+        To pause, set all three to <code>true</code>, apply Terraform, then cut a release. Terraform pauses the indexer
+        schedule, stops routing <code>/api</code> and disables the API and indexer alert policies. To resume, set all
         three to <code>false</code> and apply Terraform first. The indexer continues from its checkpoint and catches up
         before the release is cut.
       </p>

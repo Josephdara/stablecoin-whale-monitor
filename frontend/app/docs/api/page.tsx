@@ -280,7 +280,7 @@ export default function ApiPage() {
           <tr><td><code>retentionDays</code></td><td>The retention window the API applies.</td></tr>
           <tr><td><code>indexThreshold</code></td><td>The minimum transfer amount the indexer keeps, as a decimal string in whole tokens.</td></tr>
           <tr><td><code>confirmationBuffer</code></td><td>How many of the newest blocks the indexer waits behind before reading a block.</td></tr>
-          <tr><td><code>pollIntervalSeconds</code></td><td>The pause between indexer cycles. <code>indexThreshold</code>, <code>confirmationBuffer</code> and <code>pollIntervalSeconds</code> are <code>null</code> when the API is not configured with them.</td></tr>
+          <tr><td><code>pollIntervalSeconds</code></td><td>The interval between scheduled indexer runs, in seconds. <code>indexThreshold</code>, <code>confirmationBuffer</code> and <code>pollIntervalSeconds</code> are <code>null</code> when the API is not configured with them.</td></tr>
           <tr><td><code>indexedEvents</code></td><td>Transfers held in memory, inside the retention window.</td></tr>
           <tr><td><code>indexRefreshedAt</code></td><td>When the API last reloaded its index from storage.</td></tr>
           <tr><td><code>indexError</code></td><td>Set when the index has never loaded or is older than {COVERAGE.maxStaleMinutes} minutes. The response is then HTTP 503.</td></tr>

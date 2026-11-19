@@ -195,9 +195,24 @@ variable "api_memory" {
 # }
 
 
-variable "indexer_worker_pool_name" {
-  description = "Cloud Run Worker Pool name for the continuous indexer."
+variable "indexer_job_name" {
+  description = "Cloud Run Job and Cloud Scheduler job name for the indexer."
   type        = string
+}
+
+variable "indexer_scheduler_service_account_email" {
+  description = "Identity Cloud Scheduler uses to start the indexer job. Pass the IAM module output."
+  type        = string
+}
+
+variable "indexer_interval_minutes" {
+  description = "Minutes between scheduled indexer runs. Also reported by the API as the poll interval."
+  type        = number
+
+  validation {
+    condition     = contains([10, 12, 15, 20, 30, 60], var.indexer_interval_minutes)
+    error_message = "indexer_interval_minutes must divide an hour evenly and be at least 10."
+  }
 }
 
 variable "indexer_service_account_email" {
@@ -222,11 +237,6 @@ variable "block_batch_size" {
 
 variable "rpc_log_chunk_size" {
   description = "Blocks per eth_getLogs call. Startup fails if this exceeds block_batch_size."
-  type        = number
-}
-
-variable "poll_interval_ms" {
-  description = "Delay between indexing cycles."
   type        = number
 }
 
@@ -296,7 +306,7 @@ variable "indexer_memory" {
 }
 
 variable "services_paused" {
-  description = "Takes the API and indexer offline without destroying them: the indexer and the API runs no instances."
+  description = "Takes the API and indexer offline without destroying them: the API runs no instances and the indexer schedule is paused."
   type        = bool
   default     = false
 }

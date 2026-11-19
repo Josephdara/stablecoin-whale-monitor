@@ -6,7 +6,7 @@ through a read-only API, displays it in a static dashboard, and sends email
 alerts for transfers above a separate alert threshold.
 
 The current v3 estate is a Terraform-managed Google Cloud deployment built
-around a continuously running Cloud Run Worker Pool, two Cloud Run services,
+around an hourly Cloud Run Job started by Cloud Scheduler, two Cloud Run services,
 Pub/Sub, a private Cloud Storage frontend origin, a global HTTPS load balancer,
 Cloud Armor, Cloud CDN, Cloud Monitoring, and approval-gated Cloud Build
 delivery. The live deployment is [swm.josephdara.com](https://swm.josephdara.com).
@@ -18,7 +18,7 @@ are kept separate from the current deployment path.
 
 | Version | Architecture | Documentation | Source snapshot |
 | --- | --- | --- | --- |
-| **v3 (current)** | Terraform, Cloud Run Worker Pool and Services, Pub/Sub, global edge, monitoring, gated CI/CD | [Deployment runbook](docs/RUNBOOK.md) · [published v3 article](https://josephdara.hashnode.dev/gcp-swm-3-terraform) | [`V3`](https://github.com/Josephdara/stablecoin-whale-monitor/tree/V3) and current `main` |
+| **v3 (current)** | Terraform, scheduled Cloud Run Job and Services, Pub/Sub, global edge, monitoring, gated CI/CD | [Deployment runbook](docs/RUNBOOK.md) · [published v3 article](https://josephdara.hashnode.dev/gcp-swm-3-terraform) | [`V3`](https://github.com/Josephdara/stablecoin-whale-monitor/tree/V3) and current `main` |
 | **v2** | Manually deployed containers using Cloud Run Job + Scheduler, Pub/Sub, and a completed GKE Autopilot portability exercise | [v2 deployment playbook](docs/PLAYBOOK.md) · [published v2 article](https://josephdara.hashnode.dev/gcp-swm-2-cloudrun-gke) | [`V2`](https://github.com/Josephdara/stablecoin-whale-monitor/tree/V2) |
 | **v1** | Hand-configured Compute Engine VMs, systemd, Nginx, VPC/NAT, and a global load balancer | [v1 architecture and operations](docs/V1.md) · [published v1 article](https://josephdara.hashnode.dev/gcp-swm-1-vm) | [`V1`](https://github.com/Josephdara/stablecoin-whale-monitor/tree/V1) |
 
@@ -35,7 +35,8 @@ the current Terraform configuration.
 - Writes immutable NDJSON objects, one object per committed block range.
 - Advances a generation-guarded checkpoint only after the corresponding event
   object is safely committed.
-- Retries transient indexer failures without terminating the Worker Pool.
+- Runs the indexer once an hour; each run catches up from the checkpoint to the
+  confirmed chain head and exits, and a failed run is retried once.
 - Publishes Cloud Storage finalize events to Pub/Sub.
 - Delivers authenticated Pub/Sub push requests to a private email alerter, with
   retry and dead-letter handling.
@@ -43,8 +44,7 @@ the current Terraform configuration.
 - Hosts a statically exported Next.js dashboard behind a global HTTPS load
   balancer and Cloud CDN.
 - Detects API outages, persistent degraded health, high latency, Pub/Sub
-  backlog, dead-letter messages, missing indexer instances, and a stalled
-  indexer loop.
+  backlog, dead-letter messages, failed indexer runs, and a stalled indexer.
 - Builds immutable application releases and deploys them only after an approved
   release-tag event.
 
@@ -56,7 +56,7 @@ the current Terraform configuration.
 Ethereum mainnet JSON-RPC
           │
           ▼
-Cloud Run Worker Pool: indexer (1 continuous instance)
+Cloud Scheduler (hourly) ──▶ Cloud Run Job: indexer (1 task per run)
           │
           ├── checkpoint ───────────────▶ private application-state bucket
           │
@@ -100,7 +100,7 @@ release-test-* tag ──▶ pending approval ──▶ CD trigger
                                                 ├── verify published release
                                                 ├── update API
                                                 ├── update alerter
-                                                ├── update Worker Pool
+                                                ├── update indexer job
                                                 ├── publish frontend
                                                 └── smoke-test approved digest
 
@@ -157,11 +157,12 @@ One non-root `linux/amd64` image runs three commands:
 
 | Workload | Container argument | Runtime | Identity scope |
 | --- | --- | --- | --- |
-| Indexer | `scripts/fetch-usdc-logs.mjs` | Cloud Run Worker Pool | create events, read/write application state, read RPC secret |
+| Indexer | `scripts/fetch-usdc-logs.mjs --once` | Cloud Run Job, started by Cloud Scheduler | create events, read/write application state, read RPC secret |
 | API | `src/api/server.mjs` | Cloud Run Service | read events and application state; no secret access |
 | Alerter | `src/alerter/server.mjs` | Private Cloud Run Service | read events and Gmail secret; no state access |
 
-Pub/Sub uses a fourth identity only to mint the OIDC token and invoke the
+Cloud Scheduler uses its own identity, which can only start the indexer job.
+Pub/Sub uses a separate identity only to mint the OIDC token and invoke the
 alerter. Verify, CI, and CD each have their own user-managed service account.
 CD receives `serviceAccountUser` only on the three runtime identities it must
 preserve while deploying new revisions.
@@ -222,12 +223,11 @@ Terraform creates email-backed policies for:
 - p99 API latency;
 - dead-letter queue depth;
 - ageing Pub/Sub push backlog;
-- zero active indexer Worker Pool instances; and
-- absence of committed-range or completed-cycle logs.
+- an indexer run that fails after its retry; and
+- no committed-range or completed-cycle logs for two missed runs.
 
-Indexer progress is evaluated per Worker Pool rather than per revision. A new
-revision therefore does not leave an obsolete time series with an incident that
-cannot close.
+Indexer progress is evaluated per job rather than per execution, so a finished
+execution does not leave a time series with an incident that cannot close.
 
 ## Repository layout
 
@@ -236,7 +236,7 @@ cannot close.
 ├── src/
 │   ├── api/                  # read-only HTTP API and in-memory index
 │   ├── alerter/              # authenticated Pub/Sub push consumer
-│   ├── indexer/              # continuous checkpointed indexer
+│   ├── indexer/              # checkpointed indexer (single run or loop)
 │   └── storage/              # local/GCS adapters and NDJSON support
 ├── scripts/                  # executable indexer entry point
 ├── frontend/                 # statically exported Next.js dashboard

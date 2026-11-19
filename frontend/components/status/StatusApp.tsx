@@ -6,6 +6,8 @@ import { COVERAGE } from "../../lib/config";
 import { etherscan, formatDuration, formatUtcTime, groupInteger } from "../../lib/format";
 import {
   blocksBehindHead,
+  CHECKPOINT_DELAYED_SECONDS,
+  CHECKPOINT_STALE_SECONDS,
   checkpointAge,
   checkpointLevel,
   classifyHealth,
@@ -131,7 +133,7 @@ export function StatusApp() {
               : "Unknown"],
           ] : []}
         >
-          The last block the indexer finished and saved. The checkpoint normally moves every {coverage.pollIntervalSeconds} seconds.
+          The last block the indexer finished and saved. The indexer runs every {Math.round(coverage.pollIntervalSeconds / 60)} minutes and moves the checkpoint on each run.
           {behindHead !== null ? " The gap to the chain head is measured when the checkpoint is saved, and is normally the confirmation buffer." : ""}
           {body?.checkpointError ? " The API could not read the checkpoint on its last check." : ""}
         </SignalCard>
@@ -162,8 +164,9 @@ export function StatusApp() {
       <section className="stack gap-16" aria-labelledby="rules-h">
         <h2 className="h3" id="rules-h">How each state is decided</h2>
         <p className="small muted" style={{ maxWidth: 820 }}>
-          Each signal is judged on its own and the summary shows the most serious one. Thresholds are counted in
-          missed cycles: the indexer and the API both run every 30 seconds.
+          Each signal is judged on its own and the summary shows the most serious one. The API reloads its index
+          every {COVERAGE.apiRefreshSeconds} seconds. The indexer runs every {Math.round(coverage.pollIntervalSeconds / 60)} minutes,
+          so the checkpoint shows Delayed for part of each hour and Stale only after a missed run.
         </p>
         <div className="card scroll-x">
           <table className="dtbl" style={{ margin: 0 }}>
@@ -171,10 +174,10 @@ export function StatusApp() {
               <tr><th scope="col">State</th><th scope="col">Rule</th><th scope="col">What visitors see</th></tr>
             </thead>
             <tbody>
-              <RuleRow level="ok" label="Healthy" rule={'Status "ok", index refreshed under 90 s ago, checkpoint under 2 min old'} effect="Transfers appear about 1 to 3 minutes after their block" />
-              <RuleRow level="warn" label="Delayed" rule="Index 90 s to 5 min old, or checkpoint 2 to 5 min old" effect="Data is correct but new transfers arrive late" />
+              <RuleRow level="ok" label="Healthy" rule={`Status "ok", index refreshed under 90 s ago, checkpoint under ${CHECKPOINT_DELAYED_SECONDS / 60} min old`} effect="Transfers appear after the indexer's next run" />
+              <RuleRow level="warn" label="Delayed" rule={`Index 90 s to 5 min old, or checkpoint ${CHECKPOINT_DELAYED_SECONDS / 60} to ${CHECKPOINT_STALE_SECONDS / 60} min old`} effect="Data is correct. Newer transfers appear after the next indexer run" />
               <RuleRow level="warn" icon="warning" label="Degraded" rule={'HTTP 200 with status "degraded": a refresh or checkpoint read failed'} effect="Results load but may stop updating" />
-              <RuleRow level="stale" label="Stale" rule="Index or checkpoint more than 5 min old" effect={`Recent transfers are missing. The API refuses at ${COVERAGE.maxStaleMinutes} min`} />
+              <RuleRow level="stale" label="Stale" rule={`Index more than 5 min old, or checkpoint more than ${CHECKPOINT_STALE_SECONDS / 60} min old`} effect={`Recent transfers are missing. The API refuses at ${COVERAGE.maxStaleMinutes} min`} />
               <RuleRow level="err" label="Unavailable" rule="HTTP 503, any other error status, or no response" effect="The monitor cannot load transfers" />
               <RuleRow level="paused" label="Paused" rule="The site was built in maintenance mode. No requests are made" effect="Docs work. Monitoring returns on the stated date" />
             </tbody>
@@ -215,19 +218,20 @@ function Summary({
   const block = body?.lastProcessedBlock != null ? groupInteger(String(body.lastProcessedBlock)) : null;
   const indexAgo = indexSeconds !== null ? formatDuration(indexSeconds) : "an unknown time";
   const checkpointAgo = checkpointSeconds !== null ? formatDuration(checkpointSeconds) : "an unknown time";
+  const intervalMinutes = Math.round(reportedCoverage(body).pollIntervalSeconds / 60);
 
   let text = "Asking the API for its current health.";
   if (state === "healthy") {
-    text = `The API is answering, its index refreshed ${indexAgo} ago, and the indexer recorded block ${block} ${checkpointAgo} ago. New qualifying transfers should appear about 1 to 3 minutes after their block.`;
+    text = `The API is answering, its index refreshed ${indexAgo} ago, and the indexer recorded block ${block} ${checkpointAgo} ago. The indexer runs every ${intervalMinutes} minutes, so new qualifying transfers appear after its next run.`;
   } else if (state === "delayed") {
-    text = checkpointSeconds !== null && checkpointSeconds >= 120
-      ? `The indexer last recorded a block ${checkpointAgo} ago. The data shown is correct, but new transfers are arriving later than usual.`
+    text = checkpointSeconds !== null && checkpointSeconds >= CHECKPOINT_DELAYED_SECONDS
+      ? `The indexer last recorded a block ${checkpointAgo} ago. It runs every ${intervalMinutes} minutes, so the data shown is correct and newer transfers appear after its next run.`
       : `The API last reloaded its index ${indexAgo} ago. The data shown is correct, but new transfers are arriving later than usual.`;
   } else if (state === "degraded") {
     const cause = body?.lastRefreshError ? "its last index refresh failed" : "it could not read the indexer checkpoint";
     text = `The API is answering, but it reported an error: ${cause}. It keeps serving the last good data from ${indexAgo} ago.`;
   } else if (state === "stale") {
-    text = checkpointSeconds !== null && checkpointSeconds >= 300
+    text = checkpointSeconds !== null && checkpointSeconds >= CHECKPOINT_STALE_SECONDS
       ? `Nothing new has been indexed for ${checkpointAgo}. Transfers since block ${block ?? "the last checkpoint"} are missing from the monitor until the indexer catches up.`
       : `The API has not reloaded its index for ${indexAgo}. Recent transfers may be missing until it refreshes.`;
   } else if (state === "unavailable") {

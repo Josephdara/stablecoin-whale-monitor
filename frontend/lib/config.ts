@@ -25,7 +25,7 @@ export const COVERAGE = {
   alertThreshold: "1000000",
   confirmationBlocks: 6,
   blockTimeSeconds: 12,
-  pollIntervalSeconds: 30,
+  pollIntervalSeconds: 3600,
   apiRefreshSeconds: 30,
   monitorRefreshSeconds: 30,
   retentionDays: 7,

@@ -24,7 +24,7 @@ output "api_service_uri" {
 #   value       = "${google_cloud_run_v2_service.alerter.uri}/pubsub"
 # }
 
-output "indexer_worker_pool_name" {
-  description = "Worker Pool name, for monitoring and the missing-instance alert."
-  value       = google_cloud_run_v2_worker_pool.indexer.name
+output "indexer_job_name" {
+  description = "Indexer Cloud Run Job name, for CD and monitoring."
+  value       = google_cloud_run_v2_job.indexer.name
 }

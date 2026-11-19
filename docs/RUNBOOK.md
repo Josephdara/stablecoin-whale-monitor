@@ -18,10 +18,10 @@ cannot work because:
 Targeted applies are used only to break those bootstrap cycles. Once the GitHub
 repository is linked, use full saved plans.
 
-> **Cost warning:** the indexer is a continuously running Cloud Run Worker Pool.
-> It incurs cost even when no qualifying transfers are found. The API and
-> alerter can scale to zero with the supplied test defaults, but the indexer
-> cannot if it is expected to follow the chain continuously.
+> **Cost note:** the indexer is a Cloud Run Job that Cloud Scheduler starts every
+> `indexer_interval_minutes` (default 60). You pay only while a run is active,
+> usually a few minutes per hour. New transfers appear up to one interval after
+> their block.
 
 ## 0. Scope and prerequisites
 
@@ -241,7 +241,8 @@ Edit `infra/environments/test/terraform.tfvars` and set at least:
 | `api_allowed_origins` | `["https://<DOMAIN_NAME>"]`, plus any other site that reads the API from a browser |
 | `alert_email_to` | recipient of whale-alert emails |
 | `alert_email_from` | Gmail account that owns the app password |
-| `start_block` | set immediately before the first Worker Pool creation |
+| `start_block` | set immediately before the first indexer job creation |
+| `indexer_interval_minutes` | minutes between indexer runs: 10, 12, 15, 20, 30 or 60 |
 | `security_log_readers` | principals that read the security log bucket, such as `["user:<operator-email>"]` |
 
 Remove the `zone` line from the example-derived file; the test root module does
@@ -387,12 +388,16 @@ Confirm all three workloads exist:
 ```bash
 gcloud run services describe swm-api-test --region="$REGION" --project="$PROJECT_ID"
 gcloud run services describe swm-alerter-test --region="$REGION" --project="$PROJECT_ID"
-gcloud run worker-pools describe swm-indexer-test --region="$REGION" --project="$PROJECT_ID"
+gcloud run jobs describe swm-indexer-job-test --region="$REGION" --project="$PROJECT_ID"
+gcloud scheduler jobs describe swm-indexer-job-test --location="$REGION" --project="$PROJECT_ID"
 ```
 
-Older SDKs may expose Worker Pools only under `gcloud beta run worker-pools`. If
-the stable command is unavailable, update gcloud, use the beta surface, or
-inspect the pool in the Cloud Run console.
+The first scheduled run starts at the next interval boundary. To create the
+checkpoint now, start a run by hand:
+
+```bash
+gcloud run jobs execute swm-indexer-job-test --region="$REGION" --project="$PROJECT_ID" --wait
+```
 
 Confirm the checkpoint exists:
 
@@ -524,7 +529,8 @@ Google Cloud console.
 
 The indexer-stall metric has no history at creation and treats missing data as
 active. A brief initial incident can occur until a committed-range or
-cycle-complete log arrives. Evaluation is grouped by Worker Pool, not revision.
+cycle-complete log arrives. Evaluation is grouped by job, not execution. The
+alert fires after two missed runs.
 
 Pass every deployment-specific target to the smoke script; its built-in defaults
 point to the original estate:
@@ -707,7 +713,7 @@ CD performs this order:
 1. fetch and verify the CI manifest/archive;
 2. deploy the API and run the API health check;
 3. deploy the private alerter;
-4. deploy the indexer Worker Pool;
+4. point the indexer job at the new image (the next scheduled run uses it);
 5. upload the frontend and cache metadata; and
 6. verify all three workloads use the approved digest, then run the full smoke
    script.
@@ -909,6 +915,34 @@ Commit the change through a pull request.
   yourself: skip the `export` line.
 - Changes the `lifecycle` policy refuses, such as deleting or replacing a bucket,
   are applied this way deliberately. Record the reason in the pull request.
+
+### Moving an existing estate from the worker pool to the scheduled job
+
+Estates created before the indexer became a scheduled job still run it on a
+Cloud Run Worker Pool. These steps are not captured in code:
+
+1. Set `application_image` in `terraform.tfvars` to the digest the API runs now,
+   because Terraform creates the job with that image:
+
+   ```bash
+   gcloud run services describe swm-api-test --region="$REGION" --project="$PROJECT_ID" \
+     --format='value(spec.template.spec.containers[0].image)'
+   ```
+
+2. Rename `indexer_worker_pool_name` to `indexer_job_name` and replace
+   `poll_interval_ms` with `indexer_interval_minutes` in `terraform.tfvars`.
+3. Plan as yourself (skip the `export` line above): the planning account gains
+   Cloud Scheduler read access in this change. The plan destroys the worker pool
+   and its "worker pool down" alert, and creates the job, the scheduler job, the
+   scheduler service account and the job IAM bindings. Apply it.
+4. Start one run by hand and confirm it finishes:
+
+   ```bash
+   gcloud run jobs execute swm-indexer-job-test --region="$REGION" --project="$PROJECT_ID" --wait
+   ```
+
+5. Cut the next release as usual. The CD trigger now updates the job instead of
+   the pool.
 
 ### Drift check
 
@@ -1142,17 +1176,22 @@ frontend keeps serving an offline notice. Three switches control it:
 
 To pause, set all three to `true`, apply Terraform as in
 [Infrastructure change](#infrastructure-change), then cut a release. Terraform
-scales the indexer to zero instances, drops the API's warm minimum, stops
+pauses the indexer schedule, drops the API's warm minimum, stops
 routing `/api` (those paths now 404 from the frontend bucket), and disables the
 API and indexer alert policies. CD still rolls the image forward on both
 services, skips the API health checks, and asserts that `/api` is unrouted.
 
-To resume, set all three to `false` and apply Terraform first. The indexer
-continues from its checkpoint and replays the gap back to back, without its
-poll sleep, until it reaches the confirmed head. Wait until
-`/api/health` reports `"status":"ok"` with a small `checkpointAgeSeconds`
-before cutting the release; the smoke test fails a checkpoint older than
-180 seconds.
+To resume, set all three to `false` and apply Terraform first. Start one run
+by hand so the indexer catches up from its checkpoint to the confirmed head
+without waiting for the schedule:
+
+```bash
+gcloud run jobs execute swm-indexer-job-test --region="$REGION" --project="$PROJECT_ID" --wait
+```
+
+A long pause can take more than one run to replay. Wait until `/api/health`
+reports `"status":"ok"` with a `checkpointAgeSeconds` under 3720 before cutting
+the release; the smoke test fails an older checkpoint.
 
 ### Teardown
 
@@ -1183,7 +1222,12 @@ usually the cleanest final action.
 ## Current design constraints
 
 - The test environment is fixed to `us-east4` by variable validation.
-- The indexer Worker Pool is continuous and is the main idle-cost floor.
+- The indexer runs on a schedule, not continuously. Each attempt times out
+  at two minutes under half the interval (28 minutes when hourly) and retries
+  once, so even a retried run ends before the next one starts. A run that
+  times out keeps the ranges it committed; the next run continues from there.
+- The frontend shows the checkpoint as Delayed from 31 minutes and Stale from
+  62 minutes. With an hourly schedule, Delayed appears for part of every hour.
 - Event objects under `ethereum/ranges/` are deleted after seven days by
   lifecycle policy. Soft delete is disabled for the events bucket only.
 - The application-state bucket has no lifecycle deletion rule and retains the
@@ -1196,7 +1240,7 @@ usually the cleanest final action.
 - Uptime monitoring checks HTTP `200` and the mainnet chain identity. Persistent
   degraded health has a separate lower-urgency log-based alert.
 - Indexer progress counts committed ranges and caught-up cycles and aggregates
-  per Worker Pool, preventing old revisions from leaving uncloseable incidents.
+  per job, so finished executions do not leave uncloseable incidents.
 - Terraform commands and state mutations are operator-controlled locally; the
   authoritative state is stored remotely in the secured GCS backend. The
   read-only planning account, used by local plans and the pull request plan

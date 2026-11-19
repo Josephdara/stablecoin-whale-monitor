@@ -63,9 +63,11 @@ export default function ArchitecturePage() {
 
       <H2 id="compute">Compute and service boundaries</H2>
       <p>
-        The indexer runs continuously in a Cloud Run worker pool because collecting transfers is background work.
-        It polls Ethereum even when nobody has the website open. The pool is configured for one instance while
-        monitoring is enabled, giving the checkpoint a single writer.
+        The indexer runs as a Cloud Run Job because collecting transfers is background work that does not need to
+        run all the time. Cloud Scheduler starts one execution every {COVERAGE.pollIntervalSeconds / 60} minutes, even when nobody has the website
+        open. Each execution runs one task, catches up from the checkpoint to the confirmed chain head, and exits, so
+        compute is billed only while it runs. A timeout ends each run before the next one starts, giving the
+        checkpoint a single writer.
       </p>
       <p>
         The API runs as a separate Cloud Run service with its own CPU, memory, request concurrency, timeout, and
@@ -84,7 +86,7 @@ export default function ArchitecturePage() {
         <div className="flow-row">
           <Node title="Ethereum JSON-RPC" kind="ext">Mainnet node provider. URL kept in Secret Manager</Node>
           <Arrow />
-          <Node title="Indexer">Cloud Run worker pool, one continuous instance. Polls every {COVERAGE.pollIntervalSeconds} s, {COVERAGE.confirmationBlocks} blocks behind the tip</Node>
+          <Node title="Indexer">Cloud Run Job started by Cloud Scheduler every {COVERAGE.pollIntervalSeconds / 60} min, {COVERAGE.confirmationBlocks} blocks behind the tip</Node>
           <Arrow label="1 write" />
           <Node title="Events bucket">Private Cloud Storage. One NDJSON object per block range with qualifying transfers</Node>
           <Arrow label="2 then" />
@@ -119,8 +121,8 @@ export default function ArchitecturePage() {
 
       <H3 id="indexer">1. Reading the chain</H3>
       <p>
-        The indexer runs as a single continuous instance on a Cloud Run worker pool. Every {COVERAGE.pollIntervalSeconds}{" "}
-        seconds it asks the JSON-RPC node for the newest block and reads only up to {COVERAGE.confirmationBlocks}{" "}
+        The indexer runs as a scheduled Cloud Run Job. Every {COVERAGE.pollIntervalSeconds / 60}{" "}
+        minutes it asks the JSON-RPC node for the newest block and reads only up to {COVERAGE.confirmationBlocks}{" "}
         blocks behind it, about {CONFIRMATION_SECONDS} seconds of confirmation. It requests Transfer logs from the USDC
         and USDT contracts in small block ranges, decodes them, and keeps transfers of {T} tokens or more. Each log&apos;s
         block hash is checked against the block it claims to come from.
@@ -271,7 +273,7 @@ export default function ArchitecturePage() {
         <tbody>
           <tr><td>Verification</td><td>Pull requests to main run tests, frontend checks, and Terraform validation</td><td>Writes build logs</td></tr>
           <tr><td>CI</td><td>Pushes to main build the container image, static website, and release manifest</td><td>Writes logs, publishes images to Artifact Registry, and creates and reads release objects</td></tr>
-          <tr><td>CD</td><td>Release tags select a published release and wait for approval before deployment</td><td>Reads images and releases, updates the API and worker pool, acts as their runtime accounts, and manages website objects</td></tr>
+          <tr><td>CD</td><td>Release tags select a published release and wait for approval before deployment</td><td>Reads images and releases, updates the API and indexer job, acts as their runtime accounts, and manages website objects</td></tr>
         </tbody>
       </table>
       <p>
@@ -300,8 +302,8 @@ export default function ArchitecturePage() {
           <tr><td>HTTPS uptime check</td><td>Calls the public health endpoint, validates TLS, and checks for an HTTP 200 response containing the expected chain ID</td></tr>
           <tr><td>API errors and latency</td><td>Uses load-balancer metrics for 5xx responses and p99 request latency on the API backend</td></tr>
           <tr><td>Degraded API health</td><td>Uses structured health logs to detect persistent refresh or checkpoint-read errors</td></tr>
-          <tr><td>Worker availability</td><td>Checks the indexer worker pool&apos;s active instance count</td></tr>
-          <tr><td>Indexer progress</td><td>Uses committed-range and completed-cycle logs to detect a stalled processing loop, including cycles with no qualifying transfers</td></tr>
+          <tr><td>Indexer runs</td><td>Alerts when an indexer execution fails after its retry</td></tr>
+          <tr><td>Indexer progress</td><td>Uses committed-range and completed-cycle logs to detect two missed runs in a row, including runs with no qualifying transfers</td></tr>
         </tbody>
       </table>
       <p>
@@ -312,7 +314,7 @@ export default function ArchitecturePage() {
       </p>
       <p>
         Cloud Monitoring policies send notifications to the configured operator email after their failure windows are
-        met. During planned maintenance, Terraform scales the worker pool to zero, lowers the API minimum instance
+        met. During planned maintenance, Terraform pauses the indexer schedule, lowers the API minimum instance
         count to zero, removes public API routes, and disables API and indexer alert policies. The static website shows
         maintenance information. On resumption, indexing starts from the saved checkpoint.
       </p>
