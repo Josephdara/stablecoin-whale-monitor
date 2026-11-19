@@ -10,8 +10,9 @@ index.refresh().catch((error) => {
   console.error(JSON.stringify({ level: "error", message: "Initial event index refresh failed", error: error.message }));
 });
 
-// Retries the initial load while CPU is allocated at startup. With request-based
-// billing the timer is throttled between requests, so requests call ensureFresh.
+// Keeps the index warm off the request path, so storage latency no longer
+// shows up as request latency. Requests still call ensureFresh as a backstop;
+// it returns immediately whenever the timer has already done the work.
 index.startBackgroundRefresh(config.refreshMs);
 
 const app = createApiApp({ config, storage, index });

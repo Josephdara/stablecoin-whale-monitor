@@ -163,10 +163,9 @@ export default function ArchitecturePage() {
 
       <H3 id="api">3. Serving from memory</H3>
       <p>
-        The API keeps every retained transfer in memory. When a request arrives and the index is more than{" "}
-        {COVERAGE.apiRefreshSeconds} seconds old, it lists new range objects, loads them, removes duplicates by chain, transaction hash and log index, sorts newest first and drops
-        anything older than {COVERAGE.retentionDays} days. Filtering and pagination operate on that in-memory index. A new instance takes traffic only after its
-        first full load, so a deploy never serves an empty index.
+        The API keeps every retained transfer in memory. Every {COVERAGE.apiRefreshSeconds} seconds it lists new range
+        objects, loads them, removes duplicates by chain, transaction hash and log index, sorts newest first and drops
+        anything older than {COVERAGE.retentionDays} days. Filtering and pagination operate on that in-memory index.
       </p>
       <p>
         Requests also check index age and can trigger a refresh if the timer has fallen behind. Concurrent refresh
