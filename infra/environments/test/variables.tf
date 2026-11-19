@@ -119,10 +119,10 @@ variable "api_service_name" {
 #   default     = "swm-alerter-test"
 # }
 
-variable "indexer_worker_pool_name" {
-  description = "Cloud Run Worker Pool name for the continuous indexer."
+variable "indexer_job_name" {
+  description = "Cloud Run Job and Cloud Scheduler job name for the indexer."
   type        = string
-  default     = "swm-indexer-test"
+  default     = "swm-indexer-job-test"
 }
 
 variable "api_service_account_id" {
@@ -132,9 +132,15 @@ variable "api_service_account_id" {
 }
 
 variable "indexer_service_account_id" {
-  description = "Account ID for the indexer Worker Pool service account."
+  description = "Account ID for the indexer job service account."
   type        = string
   default     = "swm-test-indexer"
+}
+
+variable "indexer_scheduler_service_account_id" {
+  description = "Account ID for the service account Cloud Scheduler uses to start the indexer job."
+  type        = string
+  default     = "swm-test-indexer-scheduler"
 }
 
 # variable "alerter_service_account_id" {
@@ -202,10 +208,10 @@ variable "rpc_log_chunk_size" {
   default     = 5
 }
 
-variable "poll_interval_ms" {
-  description = "Worker Pool delay between indexing cycles in milliseconds."
+variable "indexer_interval_minutes" {
+  description = "Minutes between scheduled indexer runs: 10, 12, 15, 20, 30 or 60."
   type        = number
-  default     = 30000
+  default     = 60
 }
 
 variable "minimum_transfer_amount" {
@@ -275,7 +281,7 @@ variable "usdt_decimals" {
 }
 
 variable "indexer_lock_file" {
-  description = "Writable process-lock path inside the Worker Pool container."
+  description = "Writable process-lock path inside the indexer container."
   type        = string
   default     = "/app/data/indexer.lock"
 }
@@ -405,13 +411,13 @@ variable "alert_email_to" {
 # }
 
 variable "indexer_cpu" {
-  description = "Cloud Run Worker Pool indexer CPU limit."
+  description = "Cloud Run indexer job CPU limit."
   type        = string
   default     = "1"
 }
 
 variable "indexer_memory" {
-  description = "Cloud Run Worker Pool indexer memory limit."
+  description = "Cloud Run indexer job memory limit."
   type        = string
   default     = "512Mi"
 }

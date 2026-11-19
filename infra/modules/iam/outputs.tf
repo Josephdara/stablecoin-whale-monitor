@@ -5,8 +5,13 @@ output "api_service_account_email" {
 }
 
 output "indexer_service_account_email" {
-  description = "Attached to the indexer Worker Pool."
+  description = "Attached to the indexer Cloud Run Job."
   value       = google_service_account.indexer.email
+}
+
+output "indexer_scheduler_service_account_email" {
+  description = "Cloud Scheduler identity that starts the indexer job."
+  value       = google_service_account.indexer_scheduler.email
 }
 
 # Alerting disabled; keep the outputs for easy restoration.

@@ -5,21 +5,22 @@ export type Level = "ok" | "warn" | "stale" | "err" | "paused" | "unknown";
 
 export type OverallState = "healthy" | "delayed" | "degraded" | "stale" | "unavailable";
 
-// Both the indexer and the API run every 30 seconds, so thresholds are
-// counted in missed cycles.
+// The API reloads its index every 30 seconds. The indexer runs once an hour,
+// so a checkpoint turns stale only after a missed run.
 export const INDEX_DELAYED_SECONDS = 90;
-export const CHECKPOINT_DELAYED_SECONDS = 120;
-export const STALE_SECONDS = 300;
+export const INDEX_STALE_SECONDS = 300;
+export const CHECKPOINT_DELAYED_SECONDS = 31 * 60;
+export const CHECKPOINT_STALE_SECONDS = 62 * 60;
 
 export function indexLevel(ageSeconds: number): Level {
   if (ageSeconds < INDEX_DELAYED_SECONDS) return "ok";
-  if (ageSeconds < STALE_SECONDS) return "warn";
+  if (ageSeconds < INDEX_STALE_SECONDS) return "warn";
   return "stale";
 }
 
 export function checkpointLevel(ageSeconds: number): Level {
   if (ageSeconds < CHECKPOINT_DELAYED_SECONDS) return "ok";
-  if (ageSeconds < STALE_SECONDS) return "warn";
+  if (ageSeconds < CHECKPOINT_STALE_SECONDS) return "warn";
   return "stale";
 }
 
@@ -55,7 +56,7 @@ export function classifyHealth(result: HealthResult | null, now: number): Overal
   const body = result.body;
   const indexSeconds = indexAge(body.indexRefreshedAt, now);
   const checkpointSeconds = checkpointAge(body, result.at, now);
-  if ((indexSeconds ?? 0) >= STALE_SECONDS || (checkpointSeconds ?? 0) >= STALE_SECONDS) return "stale";
+  if ((indexSeconds ?? 0) >= INDEX_STALE_SECONDS || (checkpointSeconds ?? 0) >= CHECKPOINT_STALE_SECONDS) return "stale";
   if (body.status === "degraded") return "degraded";
   if (checkpointSeconds === null) return "delayed";
   if ((indexSeconds ?? 0) >= INDEX_DELAYED_SECONDS || checkpointSeconds >= CHECKPOINT_DELAYED_SECONDS) {

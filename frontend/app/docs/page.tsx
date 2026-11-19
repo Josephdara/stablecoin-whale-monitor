@@ -65,7 +65,7 @@ export default function DocsOverview() {
         <dt>Qualifies at</dt><dd>{threshold} tokens or more</dd>
         <dt>Confirmation</dt><dd>{COVERAGE.confirmationBlocks} blocks, about {CONFIRMATION_SECONDS} seconds</dd>
         <dt>Retention</dt><dd>{COVERAGE.retentionDays} days</dd>
-        <dt>Estimated delay</dt><dd>Roughly 1 to 3 minutes after the block</dd>
+        <dt>Estimated delay</dt><dd>Up to about {COVERAGE.pollIntervalSeconds / 60} minutes after the block</dd>
       </dl>
       <p className="small subtle" style={{ fontSize: 14 }}>
         These are the configured defaults. The delay estimate is based on the confirmation and refresh intervals.

@@ -9,7 +9,7 @@ const VERSIONS = [
   {
     version: "v3",
     current: true,
-    platform: "Terraform-managed Cloud Run: an indexer worker pool and an API service, Pub/Sub, a global edge, monitoring and gated CI/CD",
+    platform: "Terraform-managed Cloud Run: a scheduled indexer job and an API service, Pub/Sub, a global edge, monitoring and gated CI/CD",
     docs: { href: "/docs/architecture/", label: "Architecture and security" },
     source: `${SITE.repository}/tree/V3`,
   },

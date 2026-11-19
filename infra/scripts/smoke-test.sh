@@ -17,8 +17,8 @@ STATE_BUCKET="${STATE_BUCKET:-swm-gcp-test-v2-app-state}"
 TF_STATE_BUCKET="${TF_STATE_BUCKET:-swm-gcp-state-v2}"
 EVENT_PREFIX="${EVENT_PREFIX:-ethereum/ranges/}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
-MAX_CHECKPOINT_AGE="${MAX_CHECKPOINT_AGE:-180}"
-ADVANCE_WAIT="${ADVANCE_WAIT:-60}"
+# The indexer runs hourly; past this age the frontend reports the checkpoint stale.
+MAX_CHECKPOINT_AGE="${MAX_CHECKPOINT_AGE:-3720}"
 SERVICES_PAUSED="${SERVICES_PAUSED:-false}"
 
 pass=0
@@ -108,17 +108,6 @@ else
     ok "checkpoint age is bounded (${age}s <= ${MAX_CHECKPOINT_AGE}s)"
   else
     bad "checkpoint age is bounded (got '${age:-none}s')"
-  fi
-
-  # Proves the worker pool is live without needing bucket read access.
-  block_before=$(printf '%s' "$health" | grep -o '"lastProcessedBlock":[0-9]*' | cut -d: -f2)
-  printf '  ....  waiting %ss for the indexer to advance\n' "$ADVANCE_WAIT"
-  sleep "$ADVANCE_WAIT"
-  block_after=$(curl -sS "$PUBLIC_URL/api/health" | grep -o '"lastProcessedBlock":[0-9]*' | cut -d: -f2)
-  if [ -n "$block_before" ] && [ -n "$block_after" ] && [ "$block_after" -gt "$block_before" ]; then
-    ok "worker pool advances the checkpoint ($block_before -> $block_after)"
-  else
-    bad "worker pool advances the checkpoint ($block_before -> $block_after)"
   fi
 
   transfers_code=$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_URL/api/transfers?limit=5")

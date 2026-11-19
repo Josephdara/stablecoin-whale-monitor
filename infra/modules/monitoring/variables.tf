@@ -45,9 +45,14 @@ variable "api_service_name" {
 #   type        = string
 # }
 
-variable "indexer_worker_pool_name" {
-  description = "Worker Pool name, used by both indexer policies and the log metric filter."
+variable "indexer_job_name" {
+  description = "Indexer Cloud Run Job name, used by both indexer policies and the log metric filter."
   type        = string
+}
+
+variable "indexer_interval_minutes" {
+  description = "Minutes between scheduled indexer runs. Sets the stall alert window."
+  type        = number
 }
 
 variable "api_5xx_rate_threshold" {
@@ -67,12 +72,6 @@ variable "api_latency_threshold_ms" {
 #   type        = number
 #   default     = 600
 # }
-
-variable "indexer_stall_duration_seconds" {
-  description = "How long durable range-progress logs may be absent before alerting."
-  type        = string
-  default     = "300s"
-}
 
 variable "api_degraded_duration_seconds" {
   description = "How long degraded API health must persist before sending a warning."

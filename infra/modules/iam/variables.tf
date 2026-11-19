@@ -11,7 +11,12 @@ variable "api_service_account_id" {
 }
 
 variable "indexer_service_account_id" {
-  description = "Account ID for the indexer Worker Pool service account."
+  description = "Account ID for the indexer job service account."
+  type        = string
+}
+
+variable "indexer_scheduler_service_account_id" {
+  description = "Account ID for the service account Cloud Scheduler uses to start the indexer job."
   type        = string
 }
 

@@ -18,7 +18,15 @@ import {
 } from "../../lib/api";
 import { COVERAGE } from "../../lib/config";
 import { formatAmount, formatDuration, formatUtcShortTime, formatUtcTime, groupInteger, shorten } from "../../lib/format";
-import { checkpointAge, checkpointLevel, indexAge, indexLevel, reportedCoverage, STALE_SECONDS } from "../../lib/health";
+import {
+  CHECKPOINT_STALE_SECONDS,
+  checkpointAge,
+  checkpointLevel,
+  indexAge,
+  indexLevel,
+  INDEX_STALE_SECONDS,
+  reportedCoverage,
+} from "../../lib/health";
 import { useAnnounce } from "../Announcer";
 import { HistoryNotice } from "../HistoryNotice";
 import { Icon, TokenGlyph } from "../Icon";
@@ -808,7 +816,7 @@ function ServiceNotice({
   }
   if (!healthBody) return null;
 
-  if (checkpointSeconds !== null && checkpointSeconds >= STALE_SECONDS) {
+  if (checkpointSeconds !== null && checkpointSeconds >= CHECKPOINT_STALE_SECONDS) {
     return (
       <Callout tone="stale">
         <span>
@@ -820,7 +828,7 @@ function ServiceNotice({
       </Callout>
     );
   }
-  if (indexSeconds !== null && indexSeconds >= STALE_SECONDS) {
+  if (indexSeconds !== null && indexSeconds >= INDEX_STALE_SECONDS) {
     return (
       <Callout tone="stale">
         <span>Recent transfers may be missing. The API has not reloaded its index for {formatDuration(indexSeconds)}.</span>
@@ -839,10 +847,22 @@ function ServiceNotice({
       </Callout>
     );
   }
-  if ((checkpointSeconds !== null && checkpointLevel(checkpointSeconds) === "warn") || (indexSeconds !== null && indexLevel(indexSeconds) === "warn")) {
+  if (indexSeconds !== null && indexLevel(indexSeconds) === "warn") {
     return (
       <Callout tone="warn">
         <span>Indexing is running behind. The list is correct, but new transfers may take a few extra minutes to appear.</span>
+      </Callout>
+    );
+  }
+  if (checkpointSeconds !== null && checkpointLevel(checkpointSeconds) === "warn") {
+    const intervalMinutes = Math.round(reportedCoverage(healthBody).pollIntervalSeconds / 60);
+    return (
+      <Callout tone="warn">
+        <span>
+          The list is correct as of block{" "}
+          {healthBody.lastProcessedBlock !== null ? groupInteger(String(healthBody.lastProcessedBlock)) : "unknown"}. The
+          indexer runs every {intervalMinutes} minutes, so newer transfers appear after its next run.
+        </span>
       </Callout>
     );
   }

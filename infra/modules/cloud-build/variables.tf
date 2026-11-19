@@ -54,8 +54,8 @@ variable "api_service_name" {
 #   type        = string
 # }
 
-variable "indexer_worker_pool_name" {
-  description = "Worker Pool CD may update."
+variable "indexer_job_name" {
+  description = "Indexer Cloud Run Job CD may update."
   type        = string
 }
 

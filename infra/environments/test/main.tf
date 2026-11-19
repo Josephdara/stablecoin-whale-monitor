@@ -11,7 +11,7 @@ module "project-services" {
   project_id = var.project_id
 }
 
-# Holds the single linux/amd64 application image shared by the API, alerter, and indexer worker pool. 
+# Holds the single linux/amd64 application image shared by the API, alerter, and indexer job.
 resource "google_artifact_registry_repository" "app" {
   project       = var.project_id
   location      = var.region
@@ -77,8 +77,9 @@ module "iam" {
   project_id = var.project_id
 
 
-  api_service_account_id     = var.api_service_account_id
-  indexer_service_account_id = var.indexer_service_account_id
+  api_service_account_id               = var.api_service_account_id
+  indexer_service_account_id           = var.indexer_service_account_id
+  indexer_scheduler_service_account_id = var.indexer_scheduler_service_account_id
   # Alerting disabled; preserve these inputs for easy restoration.
   # alerter_service_account_id     = var.alerter_service_account_id
   # pubsub_push_service_account_id = var.pubsub_push_service_account_id
@@ -136,26 +137,27 @@ module "cloud_run" {
   # alerter_cpu                       = var.alerter_cpu
   # alerter_memory                    = var.alerter_memory
 
-  indexer_worker_pool_name      = var.indexer_worker_pool_name
-  indexer_service_account_email = module.iam.indexer_service_account_email
-  start_block                   = var.start_block
-  confirmation_buffer           = var.confirmation_buffer
-  block_batch_size              = var.block_batch_size
-  rpc_log_chunk_size            = var.rpc_log_chunk_size
-  poll_interval_ms              = var.poll_interval_ms
-  rpc_timeout_ms                = var.rpc_timeout_ms
-  rpc_max_retries               = var.rpc_max_retries
-  rpc_retry_base_ms             = var.rpc_retry_base_ms
-  max_rpc_response_bytes        = var.max_rpc_response_bytes
-  minimum_transfer_amount       = var.minimum_transfer_amount
-  transfer_topic                = var.transfer_topic
-  usdc_address                  = var.usdc_address
-  usdc_decimals                 = var.usdc_decimals
-  usdt_address                  = var.usdt_address
-  usdt_decimals                 = var.usdt_decimals
-  indexer_lock_file             = var.indexer_lock_file
-  indexer_cpu                   = var.indexer_cpu
-  indexer_memory                = var.indexer_memory
+  indexer_job_name                        = var.indexer_job_name
+  indexer_service_account_email           = module.iam.indexer_service_account_email
+  indexer_scheduler_service_account_email = module.iam.indexer_scheduler_service_account_email
+  indexer_interval_minutes                = var.indexer_interval_minutes
+  start_block                             = var.start_block
+  confirmation_buffer                     = var.confirmation_buffer
+  block_batch_size                        = var.block_batch_size
+  rpc_log_chunk_size                      = var.rpc_log_chunk_size
+  rpc_timeout_ms                          = var.rpc_timeout_ms
+  rpc_max_retries                         = var.rpc_max_retries
+  rpc_retry_base_ms                       = var.rpc_retry_base_ms
+  max_rpc_response_bytes                  = var.max_rpc_response_bytes
+  minimum_transfer_amount                 = var.minimum_transfer_amount
+  transfer_topic                          = var.transfer_topic
+  usdc_address                            = var.usdc_address
+  usdc_decimals                           = var.usdc_decimals
+  usdt_address                            = var.usdt_address
+  usdt_decimals                           = var.usdt_decimals
+  indexer_lock_file                       = var.indexer_lock_file
+  indexer_cpu                             = var.indexer_cpu
+  indexer_memory                          = var.indexer_memory
 
   services_paused = local.services_paused
 
@@ -234,7 +236,8 @@ module "monitoring" {
   # dead_letter_subscription_name = module.pubsub.dead_letter_subscription_name
   # alert_subscription_name       = module.pubsub.alert_subscription_name
 
-  indexer_worker_pool_name = module.cloud_run.indexer_worker_pool_name
+  indexer_job_name         = module.cloud_run.indexer_job_name
+  indexer_interval_minutes = var.indexer_interval_minutes
 
   services_paused = local.services_paused
 }
@@ -277,8 +280,8 @@ module "cloud_build" {
   artifact_repository_id = google_artifact_registry_repository.app.repository_id
   frontend_bucket_name   = module.storage.frontend_bucket_name
 
-  api_service_name         = module.cloud_run.api_service_name
-  indexer_worker_pool_name = module.cloud_run.indexer_worker_pool_name
+  api_service_name = module.cloud_run.api_service_name
+  indexer_job_name = module.cloud_run.indexer_job_name
   # alerter_service_name = module.cloud_run.alerter_service_name
 
   api_service_account_name     = module.iam.api_service_account_name

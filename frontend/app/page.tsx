@@ -242,7 +242,7 @@ export default function HomePage() {
                 <dd className="num">{COVERAGE.confirmationBlocks} blocks, about {CONFIRMATION_SECONDS} seconds</dd>
                 <dt>Refresh cadence</dt>
                 <dd className="num">
-                  Indexer polls every {COVERAGE.pollIntervalSeconds} s. API reloads every {COVERAGE.apiRefreshSeconds} s
+                  Indexer runs every {COVERAGE.pollIntervalSeconds / 60} min. API reloads every {COVERAGE.apiRefreshSeconds} s
                 </dd>
                 <dt>Retention</dt>
                 <dd className="num">{COVERAGE.retentionDays} days, then removed from the API and from storage</dd>
@@ -311,7 +311,7 @@ export default function HomePage() {
             </div>
             <div className="grid-auto-260">
               <InfraCard title="Two small services">
-                An indexer on a single Cloud Run worker pool instance and a read-only API on Cloud Run, behind one HTTPS
+                An indexer as a Cloud Run Job started on a schedule and a read-only API on Cloud Run, behind one HTTPS
                 load balancer with the static site.
               </InfraCard>
               <InfraCard title="Private, idempotent storage">

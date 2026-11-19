@@ -1,0 +1,72 @@
+name: Security scan
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TRIVY_VERSION: 0.76.1
+  TRIVY_SHA256: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
+
+jobs:
+  security-scan:
+    name: security-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check exceptions
+        run: |
+          missing=$(yq '[.[][] | select((.statement // "") == "" or (.expired_at // "") == "")] | length' .trivyignore.yaml)
+          if [ "$missing" != "0" ]; then
+            echo "::error::$missing exception(s) in .trivyignore.yaml lack a statement or expired_at."
+            exit 1
+          fi
+
+      - id: install
+        name: Install Trivy
+        run: |
+          archive="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archive" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${archive}"
+          echo "${TRIVY_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" trivy
+
+      - name: Vulnerabilities and misconfigurations
+        run: |
+          "$RUNNER_TEMP/trivy" fs . \
+            --scanners vuln,misconfig \
+            --misconfig-scanners terraform,dockerfile \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --skip-check-update \
+            --ignorefile .trivyignore.yaml \
+            --disable-telemetry \
+            --skip-version-check \
+            --no-progress \
+            --exit-code 1
+
+      - name: Secrets
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          "$RUNNER_TEMP/trivy" fs . \
+            --scanners secret \
+            --ignorefile .trivyignore.yaml \
+            --disable-telemetry \
+            --skip-version-check \
+            --no-progress \
+            --exit-code 1

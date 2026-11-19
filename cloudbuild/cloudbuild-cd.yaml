@@ -10,7 +10,7 @@ substitutions:
   _FRONTEND_BUCKET: swm-gcp-test-v2-frontend
   _API_SERVICE: swm-api-test
   # _ALERTER_SERVICE: swm-alerter-test
-  _INDEXER_POOL: swm-indexer-test
+  _INDEXER_JOB: swm-indexer-job-test
   _PUBLIC_URL: https://swm.josephdara.com
   # _ALERTER_URL: https://swm-alerter-test-pkklwzsqha-uk.a.run.app
   _EVENTS_BUCKET: swm-gcp-test-v2-events
@@ -116,8 +116,7 @@ steps:
       - -c
       - |
         set -e
-        gcloud components install beta --quiet
-        gcloud beta run worker-pools update ${_INDEXER_POOL} --region=${_REGION} \
+        gcloud run jobs update ${_INDEXER_JOB} --region=${_REGION} \
           --image="$$(cat /workspace/digest.txt)" --quiet
 
   - id: deploy-frontend
@@ -151,12 +150,11 @@ steps:
             --format='value(spec.template.spec.containers[0].image)')
           test "$$RUNNING" = "$$DIGEST" || { echo "$$svc is running $$RUNNING, expected $$DIGEST" >&2; exit 1; }
         done
-        POOL_IMAGE=$$(curl -sS -H "Authorization: Bearer $$(gcloud auth print-access-token)" \
-          "https://${_REGION}-run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${_REGION}/workerPools/${_INDEXER_POOL}" \
-          | grep -o '"image": *"[^"]*"' | head -1 | cut -d'"' -f4)
-        test "$$POOL_IMAGE" = "$$DIGEST" || {
-          echo "${_INDEXER_POOL} is running $$POOL_IMAGE, expected $$DIGEST" >&2; exit 1; }
-        echo "indexer worker pool on $$DIGEST"
+        JOB_IMAGE=$$(gcloud run jobs describe ${_INDEXER_JOB} --region=${_REGION} \
+          --format='value(spec.template.spec.template.spec.containers[0].image)')
+        test "$$JOB_IMAGE" = "$$DIGEST" || {
+          echo "${_INDEXER_JOB} is set to $$JOB_IMAGE, expected $$DIGEST" >&2; exit 1; }
+        echo "indexer job on $$DIGEST"
         curl -fsS -o /dev/null ${_PUBLIC_URL}/
         if [ "${_SERVICES_PAUSED}" != "true" ]; then
           curl -fsS ${_PUBLIC_URL}/api/health | grep -q '"chainId":1'

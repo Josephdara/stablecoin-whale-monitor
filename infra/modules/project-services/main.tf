@@ -9,6 +9,7 @@ locals {
     "artifactregistry.googleapis.com",     # Artifact Registry
     "cloudbuild.googleapis.com",           # Cloud Build
     "run.googleapis.com",                  # Cloud Run
+    "cloudscheduler.googleapis.com",       # Cloud Scheduler
     "storage.googleapis.com",              # Cloud Storage
     # "pubsub.googleapis.com",             # Pub/Sub (alerting disabled)
     "secretmanager.googleapis.com",      # Secret Manager
