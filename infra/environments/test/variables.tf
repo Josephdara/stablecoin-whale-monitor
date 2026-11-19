@@ -197,9 +197,9 @@ variable "confirmation_buffer" {
 }
 
 variable "block_batch_size" {
-  description = "Maximum number of blocks processed in one indexer batch."
+  description = "Blocks per committed range object. Larger ranges mean fewer objects for the API to load at startup."
   type        = number
-  default     = 5
+  default     = 50
 }
 
 variable "rpc_log_chunk_size" {

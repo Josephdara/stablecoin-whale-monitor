@@ -389,6 +389,16 @@ test("a never-loaded index that cannot reach storage returns 503 without leaking
   });
 });
 
+test("readiness fails until the first index load succeeds", async () => {
+  const index = new EventIndex({ listEvents: async () => [] }, 1, 7);
+
+  await withApi({ config: apiConfig(), storage: {}, index }, async (request) => {
+    assert.equal((await request("/readyz")).status, 503);
+    await index.refresh();
+    assert.equal((await request("/readyz")).status, 200);
+  });
+});
+
 test("a slow refresh on a warm index serves cached data at the deadline", async () => {
   const config = testConfig();
   const events = [agedEvent(config, { token: "USDC", blockNumber: 100, logIndex: 0, transaction: 1 }, 3_600_000)];

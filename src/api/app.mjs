@@ -178,6 +178,11 @@ export function createApiApp({ config, storage, index, logger = console.error })
     next();
   });
 
+  // Startup probe target. Outside /api, so the load balancer never routes it.
+  app.get("/readyz", (_request, response) => {
+    response.status(index.refreshedAt === null ? 503 : 200).json({ ready: index.refreshedAt !== null });
+  });
+
   app.get("/api/transfers", async (request, response, next) => {
     try {
       const token = parseToken(request.query.token);

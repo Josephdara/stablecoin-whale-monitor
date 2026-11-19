@@ -1233,9 +1233,14 @@ usually the cleanest final action.
 - The application-state bucket has no lifecycle deletion rule and retains the
   provider's default soft-delete behavior.
 - Build release artifacts expire after 14 days, limiting the rollback window.
-- The API intentionally uses allocated CPU while an instance exists so its
-  background refresh loop can run; `api_min_instances = 0` still permits scale
-  to zero.
+- The API uses request-based billing: CPU is allocated during startup and
+  while requests run. It refreshes its index on a request once the index is
+  older than `api_refresh_ms`. One warm instance (`api_min_instances = 1`) is
+  billed at the reduced idle rate.
+- A new API instance receives traffic only after its first index load, checked
+  by a startup probe on `/readyz` with a five-minute budget. During a deploy the
+  previous revision keeps serving until then. `/readyz` is not routed by the
+  load balancer.
 - The alerter is private and accepts authenticated Pub/Sub push only.
 - Uptime monitoring checks HTTP `200` and the mainnet chain identity. Persistent
   degraded health has a separate lower-urgency log-based alert.
