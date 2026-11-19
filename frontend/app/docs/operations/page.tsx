@@ -73,7 +73,7 @@ export default function OperationsPage() {
           <tr><td><code>MIN_AMOUNT</code></td><td>{COVERAGE.indexThreshold}</td><td>Indexing threshold in tokens</td></tr>
           <tr><td><code>CONFIRMATION_BUFFER</code></td><td>{COVERAGE.confirmationBlocks}</td><td>Blocks behind the tip before a block is read</td></tr>
           <tr><td><code>POLL_INTERVAL_MS</code></td><td>{COVERAGE.pollIntervalSeconds * 1000}</td><td>Interval between scheduled indexer runs, set by <code>indexer_interval_minutes</code> in Terraform</td></tr>
-          <tr><td><code>BLOCK_BATCH_SIZE</code></td><td>5</td><td>Blocks per processed range</td></tr>
+          <tr><td><code>BLOCK_BATCH_SIZE</code></td><td>50</td><td>Blocks per committed range object</td></tr>
           <tr><td><code>RETENTION_DAYS</code></td><td>{COVERAGE.retentionDays}</td><td>History the API serves</td></tr>
           <tr><td><code>API_REFRESH_MS</code></td><td>{COVERAGE.apiRefreshSeconds * 1000}</td><td>How often the API reloads its index</td></tr>
           <tr><td><code>API_MAX_STALE_MS</code></td><td>{COVERAGE.maxStaleMinutes * 60_000}</td><td>Index age after which query endpoints return 503</td></tr>

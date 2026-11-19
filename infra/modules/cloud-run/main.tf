@@ -283,18 +283,25 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
-      # Process-level check only. Never gate startup on checkpoint freshness:
-      # a stale chain would make the revision fail to deploy.
+      # Ready once the first index load succeeds, so traffic stays on the old
+      # revision until then. Never gate on checkpoint freshness: a stale chain
+      # would make the revision fail to deploy.
       startup_probe {
-        tcp_socket { port = 8080 }
+        http_get {
+          path = "/readyz"
+          port = 8080
+        }
         initial_delay_seconds = 0
-        period_seconds        = 5
-        failure_threshold     = 6
+        period_seconds        = 10
+        timeout_seconds       = 5
+        failure_threshold     = 30
       }
 
+      # Request-based billing. CPU is full during startup, then only while requests run.
       resources {
-        limits   = { cpu = var.api_cpu, memory = var.api_memory }
-        cpu_idle = false
+        limits            = { cpu = var.api_cpu, memory = var.api_memory }
+        cpu_idle          = true
+        startup_cpu_boost = true
       }
     }
   }
