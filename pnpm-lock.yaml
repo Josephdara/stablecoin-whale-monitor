@@ -18,8 +18,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       nodemailer:
-        specifier: ^10.1.4
-        version: 10.2.1
+        specifier: ^10.6.0
+        version: 10.6.0
 
 packages:
 
@@ -371,8 +371,8 @@ packages:
       encoding:
         optional: true
 
-  nodemailer@10.2.1:
-    resolution: {integrity: sha512-ZrDNsPFoDMwefNs7sJwrYiEJ/CG4ClJWDZv05iNJsEBWa8GRDry1QJHTJxsuTAY9eDDKjX4k+q3SxslXJOao7w==}
+  nodemailer@10.6.0:
+    resolution: {integrity: sha512-jWanL7D9GD3jvUDYKmoC5rWTiG8MnBgnN2yV68bgMKip1zUJhiSTyz7Eg+18y8sk5OvdVDzws5nZK5arSI4f5Q==}
     engines: {node: '>=20.0.0'}
 
   object-inspect@1.13.4:
@@ -948,7 +948,7 @@ snapshots:
     dependencies:
       whatwg-url: 5.0.0
 
-  nodemailer@10.2.1: {}
+  nodemailer@10.6.0: {}
 
   object-inspect@1.13.4: {}
 
